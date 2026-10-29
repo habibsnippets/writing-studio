@@ -21,8 +21,13 @@ const IMAGE_DB_STORE = "images";
 const IMAGE_DB_PREFIX = "idb:";
 const PDF_JS_ROOT = "/node_modules/pdfjs-dist/";
 const PDF_MAX_PAGES = 20;
-const PDF_RENDER_EDGE = 1400;
+/* PDF pages are shown at up to 660 CSS px wide. Render them at 4x that
+   width so the page stays crisp on Retina screens, at 200% canvas zoom,
+   and in 2x exports. The edge cap keeps unusual poster-sized pages from
+   allocating enormous canvases. */
 const PDF_DISPLAY_WIDTH = 660;
+const PDF_RENDER_WIDTH = PDF_DISPLAY_WIDTH * 4;
+const PDF_RENDER_MAX_EDGE = 4600;
 const HIGHLIGHT_COLOR = "#ffe066";
 const BINDABLE_TYPES = ["rect", "diamond", "ellipse", "image"];
 /* Connection points are the four corners and the four edge midpoints,
@@ -34,6 +39,16 @@ const MAX_CORNER_RADIUS = 32;
 /* Curved edges bow out from their straight chord. The bulge is derived
    from the two endpoints, so a curve needs no extra stored state. */
 const CURVE_BOW = 0.22;
+/* Connectors can be drawn three ways, like Excalidraw's line types:
+   sharp keeps the points as they were drawn, curved smooths through
+   them, and elbow turns every diagonal step into right angles — the
+   routing system-design flowcharts are drawn with. */
+const PATH_STYLES = ["sharp", "curved", "elbow"];
+const ARROWHEADS = ["none", "arrow", "triangle", "bar", "dot"];
+/* How far an elbowed connector leaves a shape before it turns, and how
+   round the right-angle corners are. */
+const ELBOW_STUB = 22;
+const ELBOW_CORNER = 10;
 
 const STROKE_COLORS = [
   "#1e1e1e", "#f3f3f6", "#5c5f66", "#e03131", "#2f9e44", "#1971c2",
@@ -147,7 +162,9 @@ function boundsOf(el) {
   if (el.type === "line" || el.type === "arrow" || el.type === "pen" || el.type === "highlight") {
     const pts = el.points || [];
     if (!pts.length) return { x: el.x, y: el.y, w: el.w, h: el.h };
-    const drawn = (el.type === "line" || el.type === "arrow") && el.curve
+    /* Curved and elbowed connectors bow or bend away from their stored
+       anchor points, so the visible route is what has a bounding box. */
+    const drawn = el.type === "line" || el.type === "arrow"
       ? visualPoints(el)
       : absPoints(el);
     const xs = drawn.map((p) => p.x);
@@ -185,12 +202,176 @@ function quadraticPoints(a, control, b, count = 18) {
   return out;
 }
 
-/* What the eye sees, which for a curved connector is the sampled curve
-   rather than the two anchor points that get stored. */
+function pathStyleOf(item) {
+  if (item && PATH_STYLES.includes(item.pathStyle)) return item.pathStyle;
+  return item?.curve ? "curved" : "sharp";
+}
+
+/* Which end marks a connector carries. Stored per element; old scenes
+   fall back to the plain arrowhead the type used to imply. */
+function arrowheadOf(item, side) {
+  const stored = side === "start" ? item?.startArrowhead : item?.endArrowhead;
+  if (ARROWHEADS.includes(stored)) return stored;
+  if (side === "start") return "none";
+  return item?.type === "arrow" ? "arrow" : "none";
+}
+
+/* An anchor name says which way a connector should leave its shape:
+   a side anchor has one obvious normal, a corner has two choices, and
+   the one pointing towards the other end wins. */
+const ANCHOR_SIDES = {
+  n: ["n"], s: ["s"], e: ["e"], w: ["w"],
+  nw: ["n", "w"], ne: ["n", "e"], se: ["s", "e"], sw: ["s", "w"],
+};
+
+function outwardSide(anchor, from, toward) {
+  const sides = ANCHOR_SIDES[anchor];
+  if (!sides) return null;
+  if (sides.length === 1) return sides[0];
+  const dx = toward.x - from.x;
+  const dy = toward.y - from.y;
+  let best = sides[0];
+  let bestScore = -Infinity;
+  for (const side of sides) {
+    const score = side === "e" ? dx : side === "w" ? -dx : side === "s" ? dy : -dy;
+    if (score > bestScore) {
+      bestScore = score;
+      best = side;
+    }
+  }
+  return best;
+}
+
+function sideOffset(point, side, distance) {
+  if (side === "n") return { x: point.x, y: point.y - distance };
+  if (side === "s") return { x: point.x, y: point.y + distance };
+  if (side === "e") return { x: point.x + distance, y: point.y };
+  if (side === "w") return { x: point.x - distance, y: point.y };
+  return { ...point };
+}
+
+/* Right-angle route between two points. With known sides the turns are
+   placed so the line leaves and enters the shapes straight on; without
+   them the longer axis decides where the bend sits. */
+function orthoJoin(a, b, aSide, bSide) {
+  const midX = (a.x + b.x) / 2;
+  const midY = (a.y + b.y) / 2;
+  const horizontal = (side) => side === "e" || side === "w";
+  if (aSide && bSide) {
+    if (horizontal(aSide) && horizontal(bSide)) {
+      return [{ x: midX, y: a.y }, { x: midX, y: b.y }];
+    }
+    if (!horizontal(aSide) && !horizontal(bSide)) {
+      return [{ x: a.x, y: midY }, { x: b.x, y: midY }];
+    }
+    return [horizontal(aSide) ? { x: b.x, y: a.y } : { x: a.x, y: b.y }];
+  }
+  if (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)) {
+    return [{ x: midX, y: a.y }, { x: midX, y: b.y }];
+  }
+  return [{ x: a.x, y: midY }, { x: b.x, y: midY }];
+}
+
+function elbowSegment(a, b, aSide, bSide) {
+  const out = [{ ...a }];
+  const start = aSide ? sideOffset(a, aSide, ELBOW_STUB) : { ...a };
+  const end = bSide ? sideOffset(b, bSide, ELBOW_STUB) : { ...b };
+  if (aSide) out.push(start);
+  out.push(...orthoJoin(start, end, aSide, bSide), end);
+  if (bSide) out.push({ ...b });
+  return out;
+}
+
+/* Drop duplicate points and collinear middles so the handle set on an
+   elbowed connector only shows the corners that matter. */
+function cleanRoute(points) {
+  const out = [];
+  for (const point of points) {
+    const last = out[out.length - 1];
+    if (last && Math.hypot(point.x - last.x, point.y - last.y) < 0.5) continue;
+    out.push(point);
+  }
+  if (out.length < 3) return out;
+  const result = [out[0]];
+  for (let i = 1; i < out.length - 1; i++) {
+    const a = result[result.length - 1];
+    const b = out[i];
+    const c = out[i + 1];
+    const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    const straightX = Math.abs(a.x - b.x) < 0.5 && Math.abs(b.x - c.x) < 0.5;
+    const straightY = Math.abs(a.y - b.y) < 0.5 && Math.abs(b.y - c.y) < 0.5;
+    if (Math.abs(cross) < 0.5 && (straightX || straightY)) continue;
+    result.push(b);
+  }
+  result.push(out[out.length - 1]);
+  return result;
+}
+
+/* An elbowed route is derived, not stored: the element keeps the points
+   the writer placed (or the two anchors it is bound to), and the right
+   angles are computed from them each time it is drawn. */
+function elbowRoute(item, points) {
+  const first = points[0];
+  const last = points[points.length - 1];
+  const startSide = item.startBinding?.anchor
+    ? outwardSide(item.startBinding.anchor, first, last)
+    : null;
+  const endSide = item.endBinding?.anchor
+    ? outwardSide(item.endBinding.anchor, last, first)
+    : null;
+  const route = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    const segment = elbowSegment(
+      a, b,
+      i === 0 ? startSide : null,
+      i === points.length - 2 ? endSide : null
+    );
+    if (i) route.push(...segment.slice(1));
+    else route.push(...segment);
+  }
+  return cleanRoute(route);
+}
+
+/* Smooth a multi-point connector through the midpoints of its segments,
+   the way a hand-drawn curve would pass through its waypoints. */
+function smoothPoints(points, steps = 8) {
+  if (points.length < 3) return points;
+  const out = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const c = points[i + 1];
+    const start = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const end = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2 };
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps;
+      const mt = 1 - t;
+      out.push({
+        x: mt * mt * start.x + 2 * mt * t * b.x + t * t * end.x,
+        y: mt * mt * start.y + 2 * mt * t * b.y + t * t * end.y,
+      });
+    }
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+/* What the eye sees: the routed path rather than the anchor points that
+   get stored. Used for drawing, hit testing and bounds alike. */
 function visualPoints(item) {
   const pts = absPoints(item);
-  if (!item.curve || pts.length < 2) return pts;
-  return quadraticPoints(pts[0], curveControlPoint(pts[0], pts[pts.length - 1]), pts[pts.length - 1]);
+  if (pts.length < 2) return pts;
+  const style = pathStyleOf(item);
+  if (style === "curved") {
+    if (pts.length === 2) {
+      return quadraticPoints(pts[0], curveControlPoint(pts[0], pts[1]), pts[1]);
+    }
+    return smoothPoints(pts);
+  }
+  if (style === "elbow") return elbowRoute(item, pts);
+  return pts;
 }
 
 function centerOf(item) {
@@ -462,11 +643,9 @@ function handlesFor(el) {
   const cx = b.x + b.w / 2;
   const cy = b.y + b.h / 2;
   if (el.type === "line" || el.type === "arrow") {
-    const pts = absPoints(el);
-    return [
-      { name: "p0", x: pts[0].x, y: pts[0].y },
-      { name: "p1", x: pts[pts.length - 1].x, y: pts[pts.length - 1].y },
-    ];
+    /* Every waypoint of a multi-point connector can be dragged, so a
+       route can be tuned without redrawing the whole thing. */
+    return absPoints(el).map((point, i) => ({ name: `p${i}`, x: point.x, y: point.y }));
   }
   if (el.type === "text") {
     /* No resize handles: the words decide how wide the text is. */
@@ -513,7 +692,16 @@ function blankElement(type, x, y, w = 0, h = 0, style = {}) {
   }
   if (type === "line" || type === "arrow") {
     el.points = [{ x: 0, y: 0 }, { x: 0, y: 0 }];
-    el.curve = !!style.curve;
+    el.pathStyle = PATH_STYLES.includes(style.pathStyle)
+      ? style.pathStyle
+      : style.curve ? "curved" : "sharp";
+    el.curve = el.pathStyle === "curved";
+    /* New arrows end in an arrowhead; new lines stay plain until one is
+       picked in the Ends row. */
+    el.startArrowhead = ARROWHEADS.includes(style.startArrowhead) ? style.startArrowhead : "none";
+    el.endArrowhead = ARROWHEADS.includes(style.endArrowhead)
+      ? style.endArrowhead
+      : type === "arrow" ? "arrow" : "none";
     el.startBinding = null;
     el.endBinding = null;
   }
@@ -549,6 +737,8 @@ export function mountCanvas(opts = {}) {
     strokeWidths: $("strokeWidths"),
     strokeStyles: $("strokeStyles"),
     pathStyles: $("pathStyles"),
+    startHeads: $("startHeads"),
+    endHeads: $("endHeads"),
     edgeStyles: $("edgeStyles"),
     roughness: $("roughness"),
     opacity: $("opacity"),
@@ -612,7 +802,10 @@ export function mountCanvas(opts = {}) {
       stroke: "#1e1e1e",
       fill: "#a5d8ff",
       fillStyle: "none",
+      pathStyle: "sharp",
       curve: false,
+      startArrowhead: "none",
+      endArrowhead: "arrow",
       strokeWidth: 2,
       strokeStyle: "solid",
       opacity: 1,
@@ -1152,7 +1345,9 @@ export function mountCanvas(opts = {}) {
         const page = await doc.getPage(num);
         try {
           const base = page.getViewport({ scale: 1 });
-          const scale = clamp(PDF_RENDER_EDGE / Math.max(base.width, base.height), 0.5, 2.6);
+          const widthScale = PDF_RENDER_WIDTH / Math.max(1, base.width);
+          const edgeScale = PDF_RENDER_MAX_EDGE / Math.max(base.width, base.height);
+          const scale = clamp(Math.min(widthScale, edgeScale), 0.5, 8);
           const viewport = page.getViewport({ scale });
           const bitmap = document.createElement("canvas");
           bitmap.width = Math.max(1, Math.round(viewport.width));
@@ -1188,7 +1383,10 @@ export function mountCanvas(opts = {}) {
             console.warn("Could not extract text items:", e);
           }
 
-          const blob = await canvasToBlob(bitmap, "image/jpeg", 0.9);
+          /* PNG keeps PDF text and fine rules sharp. JPEG's block
+             compression was visibly smearing glyph edges, especially
+             once the bitmap was scaled for display. */
+          const blob = await canvasToBlob(bitmap, "image/png");
           let src;
           try {
             const id = `pdf-${Date.now().toString(36)}-${num}-${Math.random().toString(36).slice(2, 7)}`;
@@ -1324,9 +1522,18 @@ export function mountCanvas(opts = {}) {
     }
 
     state.elements = Array.isArray(data?.elements) ? data.elements : [];
-    /* Scenes saved before auto-sizing may carry a fixed text width. */
+    /* Scenes saved before auto-sizing may carry a fixed text width, and
+       connectors used to know only "curved or not" plus a single implied
+       arrowhead. Bring both shapes of old data up to date. */
     for (const item of state.elements) {
       if (item.type === "text") refreshTextSize(item);
+      if (item.type === "line" || item.type === "arrow") {
+        item.pathStyle = pathStyleOf(item);
+        if (!ARROWHEADS.includes(item.startArrowhead)) item.startArrowhead = "none";
+        if (!ARROWHEADS.includes(item.endArrowhead)) {
+          item.endArrowhead = item.type === "arrow" ? "arrow" : "none";
+        }
+      }
     }
     routeBoundArrows();
     const v = data?.view;
@@ -1613,18 +1820,107 @@ export function mountCanvas(opts = {}) {
     }
   }
 
-  function drawArrowHead(g, item, pts) {
-    const tip = pts[pts.length - 1];
-    const prev = pts[pts.length - 2];
-    const angle = Math.atan2(prev.y - tip.y, prev.x - tip.x);
-    const len = 8 + item.strokeWidth * 2.2;
+  /* End marks. Excalidraw offers the same small family of arrowheads and
+   architects use all of them: open arrows for flow, filled triangles
+   for direction, bars for "and then", dots for junctions. */
+  function drawArrowHead(g, item, tip, from, kind) {
+    if (!kind || kind === "none" || !from) return;
+    const angle = Math.atan2(from.y - tip.y, from.x - tip.x);
+    const len = 9 + item.strokeWidth * 2.2;
+    applyStroke(g, item);
+    if (kind === "bar") {
+      const half = len * 0.5;
+      g.beginPath();
+      g.moveTo(tip.x + Math.cos(angle + Math.PI / 2) * half, tip.y + Math.sin(angle + Math.PI / 2) * half);
+      g.lineTo(tip.x + Math.cos(angle - Math.PI / 2) * half, tip.y + Math.sin(angle - Math.PI / 2) * half);
+      g.stroke();
+      return;
+    }
+    if (kind === "dot") {
+      g.fillStyle = item.stroke;
+      g.beginPath();
+      g.arc(tip.x, tip.y, Math.max(2, len * 0.32), 0, Math.PI * 2);
+      g.fill();
+      return;
+    }
+    if (kind === "triangle") {
+      const spread = 0.44;
+      g.fillStyle = item.stroke;
+      g.beginPath();
+      g.moveTo(tip.x, tip.y);
+      g.lineTo(tip.x + Math.cos(angle - spread) * len, tip.y + Math.sin(angle - spread) * len);
+      g.lineTo(tip.x + Math.cos(angle + spread) * len, tip.y + Math.sin(angle + spread) * len);
+      g.closePath();
+      g.fill();
+      return;
+    }
     const spread = 0.42;
     g.beginPath();
-    g.moveTo(tip.x, tip.y);
-    g.lineTo(tip.x + Math.cos(angle - spread) * len, tip.y + Math.sin(angle - spread) * len);
-    g.moveTo(tip.x, tip.y);
+    g.moveTo(tip.x + Math.cos(angle - spread) * len, tip.y + Math.sin(angle - spread) * len);
+    g.lineTo(tip.x, tip.y);
     g.lineTo(tip.x + Math.cos(angle + spread) * len, tip.y + Math.sin(angle + spread) * len);
     g.stroke();
+  }
+
+  function traceRoundedPolyline(g, pts, radius) {
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
+    if (pts.length < 3 || radius < 0.5) {
+      for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+      return;
+    }
+    for (let i = 1; i < pts.length - 1; i++) {
+      const prev = pts[i - 1];
+      const cur = pts[i];
+      const next = pts[i + 1];
+      const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y) || 1;
+      const outLen = Math.hypot(next.x - cur.x, next.y - cur.y) || 1;
+      const r = Math.min(radius, inLen / 2, outLen / 2);
+      /* A rounded corner on a point that does not actually turn would
+         bulge the line, so straight-through points stay square. */
+      const turn = (cur.x - prev.x) * (next.y - cur.y) - (cur.y - prev.y) * (next.x - cur.x);
+      if (Math.abs(turn) < 0.5 || r < 0.5) {
+        g.lineTo(cur.x, cur.y);
+        continue;
+      }
+      g.lineTo(cur.x + ((prev.x - cur.x) / inLen) * r, cur.y + ((prev.y - cur.y) / inLen) * r);
+      g.quadraticCurveTo(
+        cur.x, cur.y,
+        cur.x + ((next.x - cur.x) / outLen) * r, cur.y + ((next.y - cur.y) / outLen) * r
+      );
+    }
+    g.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  }
+
+  /* Sampled version of the same rounded path, for the sketchy stroke. */
+  function roundedPolylinePoints(pts, radius) {
+    if (pts.length < 3 || radius < 0.5) return pts; 
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const prev = pts[i - 1];
+      const cur = pts[i];
+      const next = pts[i + 1];
+      const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y) || 1;
+      const outLen = Math.hypot(next.x - cur.x, next.y - cur.y) || 1;
+      const r = Math.min(radius, inLen / 2, outLen / 2);
+      const turn = (cur.x - prev.x) * (next.y - cur.y) - (cur.y - prev.y) * (next.x - cur.x);
+      if (Math.abs(turn) < 0.5 || r < 0.5) {
+        out.push({ ...cur });
+        continue;
+      }
+      const entry = {
+        x: cur.x + ((prev.x - cur.x) / inLen) * r,
+        y: cur.y + ((prev.y - cur.y) / inLen) * r,
+      };
+      const exit = {
+        x: cur.x + ((next.x - cur.x) / outLen) * r,
+        y: cur.y + ((next.y - cur.y) / outLen) * r,
+      };
+      out.push(entry);
+      out.push(...quadraticPoints(entry, cur, exit, 5).slice(1));
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
   }
 
   function drawPen(g, item) {
@@ -1662,27 +1958,36 @@ export function mountCanvas(opts = {}) {
   function drawLinear(g, item) {
     const pts = absPoints(item);
     if (pts.length < 2) return;
-    const curved = !!item.curve && pts.length === 2;
-    const control = curved ? curveControlPoint(pts[0], pts[1]) : null;
-    const tip = pts[pts.length - 1];
+    const style = pathStyleOf(item);
+    const path = visualPoints(item);
+    if (path.length < 2) return;
 
     if (item.roughness > 0) {
-      roughStroke(g, item, curved ? quadraticPoints(pts[0], control, tip) : pts, false);
+      roughStroke(
+        g, item,
+        style === "elbow" ? roundedPolylinePoints(path, ELBOW_CORNER) : path,
+        false
+      );
     } else {
       applyStroke(g, item);
-      g.beginPath();
-      g.moveTo(pts[0].x, pts[0].y);
-      if (curved) {
-        g.quadraticCurveTo(control.x, control.y, tip.x, tip.y);
-      } else {
-        for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+      if (style === "elbow") traceRoundedPolyline(g, path, ELBOW_CORNER);
+      else {
+        g.beginPath();
+        g.moveTo(path[0].x, path[0].y);
+        for (let i = 1; i < path.length; i++) g.lineTo(path[i].x, path[i].y);
       }
       g.stroke();
     }
-    if (item.type === "arrow") {
-      applyStroke(g, item);
-      /* The head follows the curve's tangent rather than the chord. */
-      drawArrowHead(g, item, curved ? [control, tip] : pts);
+
+    /* Both ends can carry a mark, and the head follows the routed path's
+       tangent rather than the chord of the element's anchor points. */
+    const endKind = arrowheadOf(item, "end");
+    const startKind = arrowheadOf(item, "start");
+    if (endKind !== "none") {
+      drawArrowHead(g, item, path[path.length - 1], path[path.length - 2], endKind);
+    }
+    if (startKind !== "none") {
+      drawArrowHead(g, item, path[0], path[1], startKind);
     }
   }
 
@@ -1743,6 +2048,11 @@ export function mountCanvas(opts = {}) {
   function drawImageElement(g, item) {
     const img = item.src ? drawableImage(item.src) : null;
     if (!img) return;
+    /* PDF pages and screenshots are usually downscaled to fit the
+       canvas. High-quality resampling keeps their text from turning
+       soft when they are drawn at display size. */
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
     g.drawImage(img, item.x, item.y, item.w, item.h);
   }
 
@@ -1965,11 +2275,16 @@ export function mountCanvas(opts = {}) {
     } else if (state.tool === "highlight") {
       text = "Drag over the page to highlight · pick a colour above · V to select";
     } else if (state.tool === "arrow" || state.tool === "line") {
-      text = "Drag between shapes · corners and edges snap · or click, then click · Shift locks 45°";
+      text = "Drag between shapes · ends snap to edges · Path \"elbow\" for right-angle flowcharts · Shift locks 45°";
     } else if (state.tool === "hand") {
       text = "Drag to pan · scroll to move";
     } else if (state.selected.size) {
-      text = "Drag to move · handles resize · double-click text to edit";
+      const picked = selected();
+      const connector = picked.length === 1
+        && (picked[0].type === "line" || picked[0].type === "arrow");
+      text = connector
+        ? "Drag an end to reconnect · double-click a straight/curved line to add a waypoint · Start/End marks above"
+        : "Drag to move · handles resize · double-click text to edit";
     }
     el.hint.textContent = text;
   }
@@ -1998,7 +2313,7 @@ export function mountCanvas(opts = {}) {
       n: "ns-resize", s: "ns-resize",
       e: "ew-resize", w: "ew-resize",
       p0: "crosshair", p1: "crosshair",
-    }[name] || "default";
+    }[name] || (name.startsWith("p") ? "crosshair" : "default");
   }
 
   function handleAt(px, py) {
@@ -2095,7 +2410,10 @@ export function mountCanvas(opts = {}) {
     } else if (e) {
       end = bindingEndpoint(item.endBinding, e, start);
     }
-    setLinePoints(item, [start, end]);
+    /* Waypoints in the middle belong to the writer: only the ends move
+       when a shape they are tied to moves. */
+    const middle = pts.slice(1, -1);
+    setLinePoints(item, [start, ...middle, end]);
   }
 
   function routeBoundArrows() {
@@ -2143,7 +2461,14 @@ export function mountCanvas(opts = {}) {
     if (p) {
       const h = handleAt(p.px, p.py);
       if (h) { stage.style.cursor = cursorForHandle(h); return; }
-      if (hitElementAt(p.x, p.y)) { stage.style.cursor = "move"; return; }
+      /* Only an already-selected element is draggable. An unselected
+         shape keeps the normal pointer so the first click selects it
+         (and a double-click can open its text). */
+      const hovered = hitElementAt(p.x, p.y);
+      if (hovered && state.selected.has(hovered.id)) {
+        stage.style.cursor = "move";
+        return;
+      }
     }
     stage.style.cursor = "default";
   }
@@ -2264,12 +2589,13 @@ export function mountCanvas(opts = {}) {
 
     state.elements.push(item);
 
-    /* Freehand drawing stays active so several strokes can be drawn in a
-       row. Unlike shapes, the new stroke is not selected automatically. */
-    if (item.type === "pen" || item.type === "highlight") {
-      state.selected.clear();
-    } else {
-      state.selected = new Set([item.id]);
+    /* Do not leave a new shape selected. The select tool is active, but
+       the move cursor/handles only appear after the user deliberately
+       clicks the shape. That keeps a fresh shape out of "drag mode", so
+       a double-click inside it can start typing immediately. Freehand
+       drawing stays active so several strokes can be drawn in a row. */
+    state.selected.clear();
+    if (item.type !== "pen" && item.type !== "highlight") {
       state.tool = "select";
       syncToolUI();
     }
@@ -2277,6 +2603,7 @@ export function mountCanvas(opts = {}) {
     commitHistory();
     syncStyleUI();
     updateUI();
+    updateCursor();
     render();
     scheduleSave();
   }
@@ -2303,6 +2630,50 @@ export function mountCanvas(opts = {}) {
     updateHint();
     updateUI();
     render();
+  }
+
+  /* Esc abandons whatever gesture is in flight — an unfinished box or
+     arrow, a drag, a resize, a marquee or a pan — and returns to the
+     normal pointer. The draft is discarded rather than committed. */
+  function abortGesture() {
+    const a = state.action;
+    const active = !!a || !!state.pending || !!state.draft;
+    if (!active) return false;
+
+    if (a?.kind === "move") {
+      for (const original of a.items) {
+        const item = state.elements.find((e) => e.id === original.id);
+        if (!item) continue;
+        item.x = original.x;
+        item.y = original.y;
+      }
+    } else if (a?.kind === "resize") {
+      const item = a.item;
+      if (item) {
+        item.x = a.start.x;
+        item.y = a.start.y;
+        item.w = a.start.w;
+        item.h = a.start.h;
+        if (a.points) item.points = a.points.map((p) => ({ ...p }));
+        if (item.type === "text") refreshTextSize(item);
+      }
+    } else if (a?.kind === "pan") {
+      state.view = { ...a.view };
+    }
+
+    state.action = null;
+    state.draft = null;
+    state.pending = null;
+    state.bindHover = null;
+    state.bindAnchor = null;
+    state.tool = "select";
+    syncToolUI();
+    routeBoundArrows();
+    updateHint();
+    updateUI();
+    updateCursor();
+    render();
+    return true;
   }
 
   function finishPendingDraw(p) {
@@ -2334,6 +2705,9 @@ export function mountCanvas(opts = {}) {
     const a = state.action;
     let dx = p.x - a.start.x;
     let dy = p.y - a.start.y;
+    /* A few pixels of slack before anything actually moves, so the two
+       clicks of a double-click never nudge a shape out of place. */
+    if (!a.moved && Math.hypot(dx, dy) * state.view.zoom < 3) return;
     if (shift) {
       if (Math.abs(dx) >= Math.abs(dy)) dy = 0;
       else dx = 0;
@@ -2376,11 +2750,14 @@ export function mountCanvas(opts = {}) {
 
   function bindDraggedEnd(item, handle) {
     const pts = absPoints(item);
-    const point = handle === "p0" ? pts[0] : pts[pts.length - 1];
-    const other = handle === "p0" ? item.endBinding?.id : item.startBinding?.id;
+    const index = handle.startsWith("p") ? Number(handle.slice(1)) : -1;
+    /* Only the two ends can attach to a shape; waypoints stay free. */
+    if (index !== 0 && index !== pts.length - 1) return;
+    const point = pts[index];
+    const other = index === 0 ? item.endBinding?.id : item.startBinding?.id;
     const target = bindingTargetAt(point.x, point.y, other || null);
     if (!target) return;
-    if (handle === "p0") item.startBinding = { id: target.item.id, anchor: target.anchor };
+    if (index === 0) item.startBinding = { id: target.item.id, anchor: target.anchor };
     else item.endBinding = { id: target.item.id, anchor: target.anchor };
     routeLinear(item);
   }
@@ -2392,20 +2769,19 @@ export function mountCanvas(opts = {}) {
     const shift = event.shiftKey;
 
     if (item.type === "line" || item.type === "arrow") {
-      /* Pulling an end away detaches that side; releasing it over another
-         shape re-binds there, which is handled in onPointerUp. */
-      if (a.handle === "p0") item.startBinding = null;
-      else item.endBinding = null;
       const abs = a.points.map((pt) => ({ x: b.x + pt.x, y: b.y + pt.y }));
-      if (a.handle === "p0") {
-        const fixed = abs[abs.length - 1];
-        const moving = shift ? snapLine(fixed, p, true) : { x: p.x, y: p.y };
-        setLinePoints(item, [moving, ...abs.slice(1)]);
-      } else {
-        const fixed = abs[0];
-        const moving = shift ? snapLine(fixed, p, true) : { x: p.x, y: p.y };
-        setLinePoints(item, [...abs.slice(0, -1), moving]);
-      }
+      const index = a.handle.startsWith("p") ? Number(a.handle.slice(1)) : abs.length - 1;
+      const atStart = index === 0;
+      const atEnd = index === abs.length - 1;
+      /* Pulling an end away detaches that side; releasing it over another
+         shape re-binds there, which is handled in onPointerUp. Moving a
+         middle waypoint leaves both bindings alone. */
+      if (atStart) item.startBinding = null;
+      else if (atEnd) item.endBinding = null;
+      const anchor = atEnd ? abs[Math.max(0, abs.length - 2)] : abs[Math.min(abs.length - 1, 1)];
+      const moving = shift ? snapLine(anchor, p, true) : { x: p.x, y: p.y };
+      abs[index] = moving;
+      setLinePoints(item, abs);
       routeLinear(item);
       a.moved = true;
       render();
@@ -2516,8 +2892,8 @@ export function mountCanvas(opts = {}) {
   function positionTextEditor(item) {
     const z = state.view.zoom;
     const ta = el.textEditor;
-    ta.style.left = `${sx(item.x) - 2}px`;
-    ta.style.top = `${sy(item.y) - 2}px`;
+    ta.style.left = `${sx(item.x)}px`;
+    ta.style.top = `${sy(item.y)}px`;
     ta.style.font = `${item.fontSize * z}px ${fontFor(item)}`;
     ta.style.lineHeight = "1.25";
     ta.style.color = item.stroke;
@@ -2541,8 +2917,19 @@ export function mountCanvas(opts = {}) {
       for (const line of String(ta.value || "").split("\n")) {
         width = Math.max(width, measureCtx.measureText(line).width);
       }
-      ta.style.width = `${Math.max(size * 0.55, width) * z + 10}px`;
+      ta.style.width = `${Math.max(size * 0.55, width) * z + 2}px`;
     }
+  }
+
+  function startNewTextAt(p) {
+    const item = blankElement("text", p.x, p.y, 0, 0, state.style);
+    state.elements.push(item);
+    state.tool = "select";
+    state.selected = new Set([item.id]);
+    syncToolUI();
+    startTextEdit(item, true);
+    updateUI();
+    render();
   }
 
   function startTextEdit(item, isNew) {
@@ -2603,6 +2990,9 @@ export function mountCanvas(opts = {}) {
 
     item.text = value;
     refreshTextSize(item);
+    /* A freshly typed label should look like ink on the canvas, not a
+       selected object with a bounding box around it. */
+    if (wasNew) state.selected.delete(item.id);
     commitHistory();
     syncStyleUI();
     updateUI();
@@ -2710,9 +3100,29 @@ export function mountCanvas(opts = {}) {
     out.width = Math.max(1, Math.round(rect.w * s));
     out.height = Math.max(1, Math.round(rect.h * s));
     const g = out.getContext("2d");
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
     g.setTransform(s, 0, 0, s, -rect.x * s, -rect.y * s);
     for (const item of state.elements) drawElement(g, item);
     return out;
+  }
+
+  /* How many output pixels a world unit deserves. Vector shapes look
+     right at 2x, but a PDF page bitmap carries around six pixels per
+     world unit; exporting it at 2x threw away two thirds of the detail
+     the page had already been rendered with. When the crop contains a
+     bitmap, follow its own density (capped, because renderCrop still
+     keeps the total pixel budget in check). */
+  function exportScaleFor(rect) {
+    let density = 0;
+    for (const item of state.elements) {
+      if (item.type !== "image" || !item.src || item.w <= 0) continue;
+      if (!rectsOverlap(boundsOf(item), rect)) continue;
+      const img = drawableImage(item.src);
+      const natural = img?.naturalWidth || 0;
+      if (natural > 0) density = Math.max(density, natural / item.w);
+    }
+    return clamp(Math.max(2, density), 2, 6);
   }
 
   function cropBlob() {
@@ -2722,7 +3132,7 @@ export function mountCanvas(opts = {}) {
     /* Wait for the diagram fonts (including Virgil) before rasterising,
        otherwise a text element can fall back to a different face. */
     return Promise.all([ensureExportFonts(), ensureImages()]).then(() => {
-      const out = renderCrop(rect, 2);
+      const out = renderCrop(rect, exportScaleFor(rect));
       return new Promise((resolve, reject) => {
         out.toBlob((blob) => {
           if (blob) resolve(blob);
@@ -3276,12 +3686,7 @@ export function mountCanvas(opts = {}) {
     }
 
     if (state.tool === "text") {
-      const item = blankElement("text", p.x, p.y, 0, 0, state.style);
-      state.elements.push(item);
-      state.selected = new Set([item.id]);
-      startTextEdit(item, true);
-      updateUI();
-      render();
+      startNewTextAt(p);
       return;
     }
 
@@ -3539,23 +3944,55 @@ export function mountCanvas(opts = {}) {
   }
 
   function onDoubleClick(event) {
-    if (state.tool !== "select" || state.exportMode) return;
+    if (state.exportMode) return;
     const p = pointerPos(event);
     const hit = hitElementAt(p.x, p.y);
+    if (state.tool !== "select" && !hit) return;
     event.preventDefault();
+
+    /* Double-clicking a selected connector adds a waypoint there, the
+       gesture Excalidraw uses to bend an arrow after drawing it. */
+    if (hit && (hit.type === "line" || hit.type === "arrow") && state.selected.has(hit.id)) {
+      if (pathStyleOf(hit) === "elbow") {
+        notify("Elbow routes are automatic — pick straight or curved to place waypoints");
+        return;
+      }
+      addWaypoint(hit, p);
+      return;
+    }
 
     if (hit?.type === "text") {
       startTextEdit(hit, false);
       return;
     }
-    if (!hit) {
-      const item = blankElement("text", p.x, p.y, 0, 0, state.style);
-      state.elements.push(item);
-      state.selected = new Set([item.id]);
-      startTextEdit(item, true);
-      updateUI();
-      render();
+    /* Double-clicking a shape opens a caret at that point, so a box can
+       be labelled without switching tools or creating a separate frame.
+       Lines and freehand strokes have no interior, so they are skipped. */
+    if (hit && (hit.type === "line" || hit.type === "arrow" || hit.type === "pen" || hit.type === "highlight")) {
+      return;
     }
+    startNewTextAt(p);
+  }
+
+  function addWaypoint(item, p) {
+    const pts = absPoints(item);
+    let at = pts.length - 1;
+    let best = Infinity;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const d = distanceToSegment(p.x, p.y, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
+      if (d < best) {
+        best = d;
+        at = i + 1;
+      }
+    }
+    pts.splice(at, 0, { x: p.x, y: p.y });
+    setLinePoints(item, pts);
+    commitHistory();
+    syncStyleUI();
+    updateHint();
+    render();
+    scheduleSave();
+    notify("Waypoint added · drag it to shape the route");
   }
 
   /* --- keyboard -------------------------------------------- */
@@ -3648,14 +4085,20 @@ export function mountCanvas(opts = {}) {
     }
 
     if (event.key === "Escape") {
-      if (el.aiExplainCard && !el.aiExplainCard.hidden) closeAiExplainCard();
-      else if (state.tool === "ai") setTool("select");
-      else if (state.pending) cancelPendingDraw();
-      else if (state.exportMode) cancelExport();
-      else if (state.selected.size) {
+      event.preventDefault();
+      if (el.aiExplainCard && !el.aiExplainCard.hidden) {
+        closeAiExplainCard();
+      } else if (abortGesture()) {
+        /* The in-flight shape/arrow is gone and the select tool is back. */
+      } else if (state.tool === "ai") {
+        setTool("select");
+      } else if (state.exportMode) {
+        cancelExport();
+      } else if (state.selected.size) {
         state.selected.clear();
         syncStyleUI();
         updateHint();
+        updateCursor();
         render();
       } else if (state.tool !== "select") {
         setTool("select");
@@ -3842,7 +4285,9 @@ export function mountCanvas(opts = {}) {
     setActive(el.fillStyles, "fill", fillStyle);
     setActive(el.strokeWidths, "width", s.strokeWidth);
     setActive(el.strokeStyles, "stroke", s.strokeStyle || "solid");
-    setActive(el.pathStyles, "path", s.curve ? "curved" : "sharp");
+    setActive(el.pathStyles, "path", pathStyleOf(s));
+    setActive(el.startHeads, "head", arrowheadOf(s, "start"));
+    setActive(el.endHeads, "head", arrowheadOf(s, "end"));
     setActive(el.edgeStyles, "edge", s.roundness ? "round" : "sharp");
     setActive(el.roughness, "rough", s.roughness ?? 1);
     setActive(el.textAlign, "align", s.textAlign || "left");
@@ -3866,7 +4311,12 @@ export function mountCanvas(opts = {}) {
       if ("fillStyle" in patch) item.fillStyle = patch.fillStyle;
       if ("strokeWidth" in patch) item.strokeWidth = patch.strokeWidth;
       if ("strokeStyle" in patch) item.strokeStyle = patch.strokeStyle;
-      if ("curve" in patch) item.curve = patch.curve;
+      if ("pathStyle" in patch) {
+        item.pathStyle = patch.pathStyle;
+        item.curve = patch.pathStyle === "curved";
+      }
+      if ("startArrowhead" in patch) item.startArrowhead = patch.startArrowhead;
+      if ("endArrowhead" in patch) item.endArrowhead = patch.endArrowhead;
       if ("roundness" in patch) item.roundness = patch.roundness;
       if ("opacity" in patch) item.opacity = clamp(patch.opacity, 0.1, 1);
       if ("roughness" in patch) item.roughness = patch.roughness;
@@ -3940,8 +4390,13 @@ export function mountCanvas(opts = {}) {
       b.addEventListener("click", () => applyStyle({ strokeStyle: b.dataset.stroke }));
     });
     el.pathStyles.querySelectorAll("button").forEach((b) => {
-      b.addEventListener("click", () => applyStyle({ curve: b.dataset.path === "curved" }));
+      b.addEventListener("click", () => applyStyle({ pathStyle: b.dataset.path }));
     });
+    for (const [container, key] of [[el.startHeads, "startArrowhead"], [el.endHeads, "endArrowhead"]]) {
+      container.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => applyStyle({ [key]: b.dataset.head }));
+      });
+    }
     el.edgeStyles.querySelectorAll("button").forEach((b) => {
       b.addEventListener("click", () => applyStyle({ roundness: b.dataset.edge === "round" ? 1 : 0 }));
     });

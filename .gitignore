@@ -41,6 +41,10 @@ uploads/
 *.local
 *.bak
 
+# npm packaging artefacts and agent/tool metadata
+*.tgz
+.freebuff/
+
 # Editor and operating-system clutter
 .vscode/
 .idea/

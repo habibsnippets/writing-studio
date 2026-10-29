@@ -1734,8 +1734,8 @@ function syncFocusChrome() {
   el.focusModeBtn.setAttribute("aria-pressed", String(on));
   el.focusModeBtn.setAttribute("aria-label", on ? "Exit fullscreen" : "Enter fullscreen");
   el.focusModeBtn.title = on
-    ? "Exit fullscreen (Esc)"
-    : "Fullscreen — hide the sidebar, preview and top bar (Esc to exit)";
+    ? "Exit fullscreen"
+    : "Fullscreen — hide the sidebar, preview and top bar";
   el.focusModeLabel.textContent = on ? "Exit full" : "Fullscreen";
 }
 
@@ -1808,7 +1808,6 @@ document.addEventListener("keydown", (event) => {
     else if (!el.siteModal.hidden) closeSiteModal();
     else if (!el.removeModal.hidden) closeRemoveModal();
     else if (!el.aiModal.hidden) closeAiModal();
-    else if (state.focusOn) exitFocusMode();
   }
   if (!mod || document.activeElement !== el.editor) return;
   const key = event.key.toLowerCase();

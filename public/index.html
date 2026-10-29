@@ -306,6 +306,47 @@
               <div class="seg" id="pathStyles">
                 <button data-path="sharp" type="button" title="Straight line">╱</button>
                 <button data-path="curved" type="button" title="Curved line">⌒</button>
+                <button data-path="elbow" type="button" title="Elbow — right-angle route for flowcharts" aria-label="Elbow route">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19v-6a2 2 0 0 1 2-2h10V5"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="style-group">
+              <span class="style-label">Start</span>
+              <div class="seg" id="startHeads" aria-label="Mark at the start of a connector">
+                <button data-head="none" type="button" title="No mark at the start">—</button>
+                <button data-head="arrow" type="button" title="Open arrow at the start">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg>
+                </button>
+                <button data-head="triangle" type="button" title="Filled triangle at the start">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path class="head-fill" d="M5 6v12l10-6Z"/></svg>
+                </button>
+                <button data-head="bar" type="button" title="Bar at the start">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5v14M7 12h10"/></svg>
+                </button>
+                <button data-head="dot" type="button" title="Dot at the start">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="head-fill" cx="7" cy="12" r="3.4"/><path d="M11 12h8"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="style-group">
+              <span class="style-label">End</span>
+              <div class="seg" id="endHeads" aria-label="Mark at the end of a connector">
+                <button data-head="none" type="button" title="No mark at the end">—</button>
+                <button data-head="arrow" type="button" title="Open arrow at the end">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>
+                </button>
+                <button data-head="triangle" type="button" title="Filled triangle at the end">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path class="head-fill" d="M19 6v12L9 12Z"/></svg>
+                </button>
+                <button data-head="bar" type="button" title="Bar at the end">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5v14M7 12h10"/></svg>
+                </button>
+                <button data-head="dot" type="button" title="Dot at the end">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="head-fill" cx="17" cy="12" r="3.4"/><path d="M5 12h8"/></svg>
+                </button>
               </div>
             </div>
 

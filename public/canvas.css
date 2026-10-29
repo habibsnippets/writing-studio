@@ -307,6 +307,8 @@
 .seg button:last-child { border-right: 0; }
 .seg button:hover { background: var(--wash); color: var(--fg); }
 .seg button.is-active { background: var(--fg); color: var(--bg); }
+/* Filled arrowhead marks stay visible when the button is inactive. */
+.seg button svg .head-fill { fill: currentColor; }
 .seg button svg {
   width: 13px;
   height: 13px;
@@ -457,17 +459,17 @@
   z-index: 6;
   margin: 0;
   padding: 0;
-  border: 1px dashed rgba(11, 98, 196, 0.7);
-  border-radius: 2px;
-  background: rgba(255, 253, 247, 0.94);
+  border: 0;
+  background: transparent;
   color: var(--fg);
+  caret-color: currentColor;
   outline: none;
   overflow: hidden;
   resize: none;
-  min-width: 18px;
+  min-width: 2px;
   white-space: pre;
   word-break: normal;
-  box-shadow: 0 0 0 3px rgba(11, 98, 196, 0.08);
+  box-shadow: none;
 }
 .draw-text-editor[hidden] { display: none !important; }
 

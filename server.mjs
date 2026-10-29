@@ -14,6 +14,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { readFile, writeFile, mkdir, unlink, access, rm, stat, readdir, copyFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
 import { renderMarkdown, readingMinutes, countHtmlWords, rewriteHtmlAssets, htmlFragment } from "./lib/md.mjs";
 import { page } from "./lib/post-page.mjs";
@@ -45,6 +46,20 @@ import {
   resolveNoteAsset,
 } from "./lib/notes.mjs";
 import { printBanner } from "./lib/banner.mjs";
+import {
+  APP_DIR,
+  PUBLIC_DIR,
+  CONTENT,
+  POSTS_FILE,
+  ASSETS_DIR,
+  DIST,
+  SEED_DIR,
+  DATA_DIR,
+  STUDIO_DATA,
+  NOTES_ROOT,
+  isInside,
+  displayPath,
+} from "./lib/paths.mjs";
 
 /* Node 20.11 is the floor: import.meta.dirname/filename and the modern
    fs, AbortSignal and fetch APIs all need it. Checked here so a stale
@@ -62,13 +77,7 @@ if (nodeMajor < 20 || (nodeMajor === 20 && nodeMinor < 11)) {
 const require = createRequire(import.meta.url);
 const run = promisify(execFile);
 
-const DIR = import.meta.dirname;
-const CONTENT = path.join(DIR, "content");
-const PUBLIC = path.join(DIR, "public");
-const DIST = path.join(DIR, "dist");
-const POSTS_FILE = path.join(CONTENT, "posts.json");
-const ASSETS_DIR = path.join(CONTENT, "assets");
-const SEED_DIR = path.join(DIR, "content.example");
+const PUBLIC = PUBLIC_DIR;
 
 const DEFAULT_PORT = Number(process.env.PORT) || 4321;
 const HOST = "127.0.0.1";
@@ -77,11 +86,11 @@ const HOST = "127.0.0.1";
 
 let pdfjsDistDir = null;
 try {
-  const pkgPath = require.resolve("pdfjs-dist/package.json", { paths: [DIR, path.resolve(DIR, "..")] });
+  const pkgPath = require.resolve("pdfjs-dist/package.json", { paths: [APP_DIR, path.resolve(APP_DIR, "..")] });
   pdfjsDistDir = path.dirname(pkgPath);
 } catch {
-  const local = path.join(DIR, "node_modules/pdfjs-dist");
-  const parent = path.join(DIR, "../node_modules/pdfjs-dist");
+  const local = path.join(APP_DIR, "node_modules/pdfjs-dist");
+  const parent = path.join(APP_DIR, "../node_modules/pdfjs-dist");
   pdfjsDistDir = (await access(local).then(() => true, () => false)) ? local : parent;
 }
 
@@ -112,7 +121,7 @@ async function writePosts(posts) {
 async function ensureLocalStore() {
   await mkdir(CONTENT, { recursive: true });
   await mkdir(ASSETS_DIR, { recursive: true });
-  await mkdir(path.join(DIR, "data", "notes", ".assets"), { recursive: true });
+  await mkdir(path.join(NOTES_ROOT, ".assets"), { recursive: true });
 
   if (await exists(POSTS_FILE)) return;
 
@@ -205,7 +214,9 @@ const json = async (req) => JSON.parse((await body(req)).toString("utf8") || "{}
 
 async function gitState() {
   try {
-    const searchDir = DIR;
+    /* The writing folder is the user's own repository when they run the
+       studio against it, so git status is read from there. */
+    const searchDir = DATA_DIR;
     const [{ stdout: status }, { stdout: branch }] = await Promise.all([
       run("git", ["status", "--porcelain"], { cwd: searchDir }),
       run("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: searchDir }),
@@ -1128,7 +1139,7 @@ async function serveStatic(res, url) {
   // 7. Public static files
   const rel = pathname.replace(/^\/+/, "");
   const publicTarget = path.resolve(PUBLIC, rel);
-  if (publicTarget.startsWith(PUBLIC) && (await exists(publicTarget))) {
+  if (isInside(PUBLIC, publicTarget) && (await exists(publicTarget))) {
     return serveFile(res, publicTarget);
   }
 
@@ -1138,7 +1149,7 @@ async function serveStatic(res, url) {
 
 /* --- Server Bootstrap with Port Conflict Handling --------- */
 
-async function startServer(port = DEFAULT_PORT, attempts = 10) {
+export async function startServer(port = DEFAULT_PORT, attempts = 10) {
   try {
     await ensureLocalStore();
   } catch (err) {
@@ -1175,8 +1186,24 @@ async function startServer(port = DEFAULT_PORT, attempts = 10) {
       drafts,
       notes: notes.counts.notes,
       connected: workspace?.repoName || "",
+      folder: displayPath(DATA_DIR),
     });
   });
 }
 
-startServer();
+/* Started directly (`node server.mjs` / `npm start`) rather than imported
+   by the CLI, which passes its own port and data folder. Windows paths
+   are compared without case so a drive letter cannot stop the server. */
+function isMainModule() {
+  try {
+    const self = fileURLToPath(import.meta.url);
+    const entry = path.resolve(process.argv[1]);
+    return process.platform === "win32"
+      ? self.toLowerCase() === entry.toLowerCase()
+      : self === entry;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) startServer();

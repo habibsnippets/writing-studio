@@ -10,6 +10,7 @@
   <img alt="Local-first" src="https://img.shields.io/badge/local--first-100%25-0f766e">
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-17395c">
   <img alt="Linux, macOS, Windows" src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-555">
+  <img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-17395c">
 </p>
 
 **Writing Studio** is a local-first writing environment for people who think in Markdown, diagrams, and annotated papers. Write an article, sketch the architecture beside it, mark up a PDF, keep private notes in a real folder tree, and publish a static blog — all from one calm interface.
@@ -81,6 +82,8 @@ npm -v
 
 ### Install and run
 
+**From a clone** (best if you want to read or change the code):
+
 ```bash
 git clone https://github.com/habibsnippets/writing-studio.git
 cd writing-studio
@@ -88,31 +91,62 @@ npm install
 npm start
 ```
 
-Open **http://127.0.0.1:4321**.
-
-`npm install` is needed once per clone. `npm start` is the everyday command. If port `4321` is busy, the server automatically tries `4322`, `4323`, and so on, then prints the URL it settled on.
-
-Choose a different starting port:
+**As an npm package** (best if you just want the app):
 
 ```bash
-# macOS / Linux
-PORT=5000 npm start
-
-# Windows PowerShell
-$env:PORT=5000; npm start
+npx writing-studio ~/writing          # macOS / Linux
+npx writing-studio "C:\Users\me\writing"   # Windows PowerShell
 ```
 
-The server binds to `127.0.0.1` only. It is not reachable from other machines on your network by default.
+Or install it once and run it anywhere:
+
+```bash
+npm install -g writing-studio
+writing-studio ~/writing
+```
+
+Before the package is published to npm, the same thing works straight from GitHub:
+
+```bash
+npx github:habibsnippets/writing-studio ~/writing
+```
+
+Open the **http://127.0.0.1:<port>** address the terminal prints. The port defaults to `4321`; if it is busy the server tries `4322`, `4323`, and so on, then prints the URL it settled on.
+
+Options:
+
+```text
+writing-studio [folder] [options]
+
+  -d, --dir <folder>   Where writing is stored (default: current folder)
+  -p, --port <number>  Port to start on
+      --light/--dark   Terminal banner colour
+  -h, --help           Usage
+  -v, --version        Version
+```
+
+When installed as a package, the app itself is read-only inside `node_modules`; **only the folder you pass in receives your writing**. That is also why `--dir` exists — point it at a Dropbox/iCloud folder, a git repository, or anywhere else.
+
+```bash
+# clone: data lives in the repository folder
+cd writing-studio && npm start
+
+# package: data lives where you point it
+writing-studio ~/Documents/writing
+```
+
+For the clone, `PORT=5000 npm start` (macOS/Linux) or `$env:PORT=5000; npm start` (PowerShell) changes the port too. The server binds to `127.0.0.1` only; it is not reachable from other machines on your network.
 
 ### First run
 
-The first `npm start` creates the local store automatically:
+The first start creates the store in the chosen folder:
 
 ```text
 content/                 ← your publishable local blog
 content/assets/          ← images and diagrams for local posts
 data/notes/              ← your private note vault
 data/notes/.assets/      ← private note images
+data/workspace.json      ← which GitHub Pages folder is connected
 dist/                    ← generated static pages
 ```
 
@@ -156,7 +190,6 @@ Shortcuts:
 | `Ctrl/⌘ + I` | Italic |
 | `Ctrl/⌘ + K` | Insert link |
 | `Ctrl/⌘ + Enter` | Recompile preview |
-| `Esc` | Exit Fullscreen focus mode |
 
 ### Diagram canvas
 
@@ -164,7 +197,11 @@ Open the **Draw** tab above the editor. The canvas is built for technical sketch
 
 - Shapes: rectangle, diamond, ellipse, line, arrow, freehand pen, highlighter, and text.
 - Connectors snap to eight anchors on each shape — four corners and four edge midpoints.
+- **Path** offers three line types: **straight**, **curved**, and **elbow**. Elbow draws right-angle routes that leave and enter each shape edge-on, which is what system-design and flowchart diagrams need. The route is recalculated whenever a bound shape moves.
+- **Start** and **End** each take a mark: none, open arrow, filled triangle, bar, or dot.
+- Double-click a straight or curved connector (while selected) to add a waypoint; drag any waypoint handle to reshape it. The two ends stay bound to shapes, waypoints stay free.
 - Shapes and connectors stay linked when you move or resize them.
+- Imported PDF pages are rasterised at roughly 300 DPI and **Export area** keeps that density, so a cropped figure stays sharp at full article width.
 - **Edges** can be sharp or rounded; rounded corners survive hand-drawn strokes, fills, and PNG export.
 - Fills support solid, hachure, and cross-hatch styles.
 - Typography options include Virgil (the hand-drawn font), Sans, Mono, and Serif.
@@ -195,14 +232,14 @@ The **Fullscreen** button sits in the pane header, directly above the **Export a
 - Hides the title bar, scope strip, metadata fields, action buttons, and banners.
 - Keeps the pane header, mode tabs, formatting toolbar, drawing tools, and Fullscreen control visible.
 - Leaves the canvas at the full viewport size, so diagrams get the maximum drawing area too.
-- Click **Exit full** (or press `Esc`) to leave. Your previous sidebar and preview layout is restored.
+- Click **Exit full** to leave. Your previous sidebar and preview layout is restored. `Esc` is deliberately reserved for the active canvas gesture, so it does not exit Fullscreen by accident.
 - If you switch to Split while focused, leaving Fullscreen keeps the Split view rather than forcing the preview back open.
 - Requesting the preview with `Ctrl/⌘ + Enter` while focused exits Fullscreen first, then opens the preview.
 
 | Shortcut | Action |
 |---|---|
 | Click **Fullscreen** | Enter focus mode |
-| Click **Exit full** or press `Esc` | Leave focus mode and restore the previous layout |
+| Click **Exit full** | Leave focus mode and restore the previous layout |
 
 ### PDF reading and annotation
 
@@ -261,7 +298,10 @@ The key is stored in your browser's `localStorage` under `writing-studio:ai-conf
 Writing Studio can write directly into an existing GitHub Pages site on your computer. It is designed for people who already keep a blog, notes, or docs in a Pages repository and publish with Git themselves.
 
 1. Click the GitHub button in the top-right corner (**Connect to Pages**).
-2. Enter the local folder of your Pages repository, for example `~/username.github.io`.
+2. Enter the local folder of your Pages repository. Any of these forms work on every OS:
+   - macOS / Linux: `~/username.github.io`, `/Users/me/site`, or a `file:///Users/me/site` URL
+   - Windows: `C:\Users\me\username.github.io`, `C:/Users/me/username.github.io`, or `%USERPROFILE%\username.github.io` (the studio expands `%USERPROFILE%` itself, so PowerShell works too)
+   - Pasted paths wrapped in quotes are accepted.
 3. The studio performs a **read-only scan**. It detects the generator and finds writing folders such as `_posts`, `_drafts`, `notes`, `blog`, `content/articles`, or `src/content/posts`.
 4. Confirm which folders are writing sections. You can rename them, uncheck anything that is not writing, or add a folder manually.
 5. Click **Connect this site**.
@@ -281,6 +321,8 @@ Once connected:
 - Existing frontmatter and body content are preserved. Only the fields the studio understands (title, date, description, draft state) are updated.
 
 The connection is stored in `data/workspace.json`, outside the Pages repository and ignored by Git. The scanner understands Jekyll / GitHub Pages, Hugo, Astro, Eleventy, Next.js, Nuxt, Gatsby, Docusaurus, VitePress, MkDocs, and plain static sites.
+
+Path handling is deliberately OS-agnostic: every repo-relative key is stored with forward slashes, containment checks use `path.relative` (so Windows' case-insensitive drive letters cannot be escaped), symlinked folders are skipped while scanning, and no shell command is ever run. On Windows, keep the site folder on a local drive rather than inside OneDrive's on-demand placeholders, which can block reads.
 
 ### Removing a published Pages post
 
@@ -330,6 +372,8 @@ npm start -- --dark
 
 ### Where everything lives
 
+When you clone the repository, the folders below sit in the repository. When you install the npm package and pass a folder (or run it with no argument), **the same folders are created in that folder instead** — never inside `node_modules`. Nothing in the reference table below is ever committed.
+
 | Path | Contents | In Git? |
 |---|---|---|
 | `content/posts.json` | Local blog index: titles, dates, tags, draft and pinned flags | **No** |
@@ -346,6 +390,9 @@ npm start -- --dark
 | `lib/` | Server-side modules | Yes |
 | `server.mjs` | Local HTTP server | Yes |
 | `package.json`, `package-lock.json` | Dependencies and scripts | Yes |
+| `bin/`, `lib/`, `public/`, `scripts/` | The app itself | Yes |
+
+`npm pack` and `npm publish` use the explicit `files` allowlist in `package.json`, so even if your `.gitignore` were misconfigured, your `content/`, `data/` and `dist/` cannot end up in the published tarball. `scripts/package-check.mjs` asserts exactly that on every CI run.
 
 ### What the `.gitignore` protects
 
@@ -373,12 +420,12 @@ Copy `content/` and `data/notes/` to keep your writing. Copy `data/workspace.jso
 
 To move the app:
 
-1. Copy the project folder, excluding `node_modules/`.
-2. Run `npm install` on the new machine.
+1. Copy the project folder, excluding `node_modules/` — or install the package on the new machine instead.
+2. Run `npm install` on the new machine (clone) or `npm install -g writing-studio` (package).
 3. Put `content/` and `data/` back if you brought them.
-4. Run `npm start`.
+4. Run `npm start`, or `writing-studio <folder>` pointing at the folder that holds them.
 
-The local blog, private notes, and connected Pages site use ordinary files, so they remain readable even without Writing Studio.
+The local blog, private notes, and connected Pages site use ordinary files, so they remain readable even without Writing Studio. The data folder is fully relocatable: nothing in it refers to an absolute install path.
 
 ### Network surface
 
@@ -422,6 +469,12 @@ If your Pages site has a build step, run it before committing, exactly as you no
 
 ```text
 writing-studio/
+├── bin/
+│   └── writing-studio.mjs     # npm CLI: --dir, --port, --help
+├── scripts/
+│   ├── smoke.mjs              # End-to-end test used by CI
+│   └── package-check.mjs      # Packs, installs and runs the tarball
+├── .github/workflows/ci.yml   # Linux + macOS + Windows, Node 20 and 22
 ├── content.example/           # Safe starter article copied on first run
 │   ├── posts.json
 │   └── welcome-to-writing-studio.md
@@ -439,9 +492,11 @@ writing-studio/
 ├── lib/
 │   ├── banner.mjs             # Terminal wordmark and theme detection
 │   ├── builder.mjs            # Static site builder
+│   ├── expand-home.mjs        # ~, quoted and %VAR% path expansion
 │   ├── frontmatter.mjs        # Safe frontmatter parsing and updates
 │   ├── md.mjs                 # Markdown, HTML, and KaTeX rendering
 │   ├── notes.mjs              # Private note vault
+│   ├── paths.mjs              # App folder vs. user data folder, path guards
 │   ├── post-page.mjs          # Article HTML shell
 │   ├── site-archive.mjs       # Archive a Pages post locally, then remove it
 │   ├── site-scanner.mjs       # Read-only Pages repository discovery
@@ -459,6 +514,7 @@ writing-studio/
 ├── .gitattributes
 ├── .gitignore
 ├── .nvmrc
+├── LICENSE
 ├── package.json
 ├── package-lock.json
 ├── README.md
@@ -563,7 +619,18 @@ Useful places to start:
 - `lib/site-archive.mjs` — archive-before-remove flow.
 - `lib/builder.mjs` — static site output.
 
-The project uses plain ES modules and vanilla CSS/JavaScript. Keep changes small and consistent with the existing file structure. There is no test suite yet; `npm run check` catches syntax errors, and the app is designed to be exercised manually against a throwaway Pages fixture.
+The project uses plain ES modules and vanilla CSS/JavaScript. Keep changes small and consistent with the existing file structure.
+
+Two automated checks run on Linux, macOS and Windows in CI:
+
+```bash
+npm run check                    # syntax-check server, CLI and browser scripts
+npm run smoke                    # starts the real CLI on a temp folder: assets, posts,
+                                 # publish, notes, Pages scan/connect/save
+node scripts/package-check.mjs   # npm pack → install the tarball → run it from there
+```
+
+`npm run smoke` and `package-check.mjs` create and delete their own temporary folders, so they never touch your real writing.
 
 When testing connected-site changes, use a disposable copy of a Pages repository. The studio's safety rules are intentionally conservative, but a real repository is still the best place to verify section detection and removal behavior.
 
@@ -598,9 +665,22 @@ Or install the current LTS from [nodejs.org](https://nodejs.org).
 
 Color is disabled for non-TTY output, `NO_COLOR`, `CLICOLOR=0`, `FORCE_COLOR=0`, and `TERM=dumb`. The ASCII logo still prints. Force a theme with `WRITING_STUDIO_THEME=light` or `WRITING_STUDIO_THEME=dark`.
 
+### I installed the package and cannot find my writing
+
+The npm package never writes into `node_modules`. Your writing lives in the folder you pass:
+
+```bash
+writing-studio --dir ~/Documents/writing   # explicit
+writing-studio                             # current folder
+```
+
+The terminal banner prints the active folder under the URL. To move your writing later, copy that folder — nothing in it points back to the install location.
+
 ### A connected Pages folder is rejected
 
 The scanner requires an existing local directory. Use the full path, check that the folder contains the site source (not only generated `dist/` output), and confirm the writing section in the wizard. The studio will not write outside the sections you confirm.
+
+On Windows, `C:\Users\me\site`, `C:/Users/me/site` and a `file:///C:/Users/me/site` URL are all accepted. If a folder exists but cannot be read, it may be a OneDrive placeholder that has not been downloaded yet, or a `\\server\share` path without access — open it once in File Explorer, then try again.
 
 ### HTML posts are read-only
 
@@ -679,4 +759,6 @@ Writing Studio is built as a local tool, with a bias toward plain files, readabl
 
 ## License
 
-This repository does not include a `LICENSE` file yet. The source is publicly visible, but that is not the same as an open-source license. If you plan to redistribute Writing Studio, publish a fork, or accept contributions, add a license that matches your intent — for example MIT for permissive reuse — before doing so.
+MIT. See [LICENSE](LICENSE).
+
+You can use, modify, redistribute, and sell this software, keep the copyright notice, and there is no warranty. The bundled Virgil font has its own license, reproduced in `public/fonts/Virgil-LICENSE.md`.
