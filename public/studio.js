@@ -125,6 +125,13 @@ const el = {
   folderCreateFields: $("folderCreateFields"),
   noteTitle: $("noteTitle"),
   noteFolder: $("noteFolder"),
+  noteFolderNew: $("noteFolderNew"),
+  noteFolderPath: $("noteFolderPath"),
+  noteFolderInline: $("noteFolderInline"),
+  noteFolderName: $("noteFolderName"),
+  noteFolderCreate: $("noteFolderCreate"),
+  noteFolderCancel: $("noteFolderCancel"),
+  noteFolderInlineHint: $("noteFolderInlineHint"),
   folderName: $("folderName"),
   folderParent: $("folderParent"),
   noteCreateBtn: $("noteCreateBtn"),
@@ -345,14 +352,22 @@ const ICON = {
   pencil: `<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="m3 13 1-3.5L11.8 1.7a1.6 1.6 0 0 1 2.3 2.3L6.3 11.8 3 13Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="m10.8 2.8 2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>`,
   pages: `<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 5.2v5.6M5.2 8h5.6" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`,
   plus: `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  notePlus: `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3.5 1.8h5.2l3.8 3.8v8.6H3.5V1.8Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8.5 1.9v3.9h3.9M8 7.5v5M5.5 10h5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  folderPlus: `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.8 4.3h4l1.3 1.5h7.1v6.4a1.5 1.5 0 0 1-1.5 1.5H3.3a1.5 1.5 0 0 1-1.5-1.5V4.3Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 8v4M6 10h4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`,
   trash: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.3 4.5V2.8h3.4v1.7M4.4 4.5l.6 9h6l.6-9M6.7 7v4M9.3 7v4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
-function groupHead(label, icon, action = "", actionLabel = "") {
+function groupHead(label, icon, actions = []) {
+  const buttons = actions
+    .map(
+      ({ action, label: actionLabel, icon: actionIcon = ICON.plus }) => `
+        <button class="group-action" type="button" data-action="${escapeHtml(action)}" title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}">${actionIcon}</button>`
+    )
+    .join("");
   return `
     <div class="group group-head">
       <span class="group-name">${icon}${escapeHtml(label)}</span>
-      ${action ? `<button class="group-action" type="button" data-action="${action}" title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}">${ICON.plus}</button>` : ""}
+      ${buttons ? `<span class="group-actions">${buttons}</span>` : ""}
     </div>`;
 }
 
@@ -437,7 +452,8 @@ function renderNoteTree(node, depth = 0, q = "") {
           <span class="tree-count">${count}</span>
         </button>
         <span class="tree-actions">
-          <button class="tree-action" type="button" data-action="new-note" data-folder="${escapeHtml(child.path)}" title="New note in ${escapeHtml(child.name)}" aria-label="New note in ${escapeHtml(child.name)}">${ICON.plus}</button>
+          <button class="tree-action" type="button" data-action="new-note" data-folder="${escapeHtml(child.path)}" title="New note in ${escapeHtml(child.name)}" aria-label="New note in ${escapeHtml(child.name)}">${ICON.notePlus}</button>
+          <button class="tree-action" type="button" data-action="new-subfolder" data-folder="${escapeHtml(child.path)}" title="New subfolder in ${escapeHtml(child.name)}" aria-label="New subfolder in ${escapeHtml(child.name)}">${ICON.folderPlus}</button>
           <button class="tree-action danger" type="button" data-action="delete-folder" data-folder="${escapeHtml(child.path)}" title="Delete folder" aria-label="Delete folder ${escapeHtml(child.name)}">${ICON.trash}</button>
         </span>
       </div>
@@ -480,7 +496,12 @@ function renderList() {
   const groups = [];
 
   const noteCount = state.notes?.counts?.notes ?? state.notes?.notes?.length ?? 0;
-  groups.push(groupHead(`Private notes · ${noteCount}`, ICON.lock, "new-folder", "New folder"));
+  groups.push(
+    groupHead(`Private notes · ${noteCount}`, ICON.lock, [
+      { action: "new-note", label: "New private note", icon: ICON.notePlus },
+      { action: "new-folder", label: "New private folder", icon: ICON.folderPlus },
+    ])
+  );
 
   const tree = buildNoteTree(state.notes?.folders || [], state.notes?.notes || []);
   const treeHtml = renderNoteTree(tree, 0, q);
@@ -488,15 +509,24 @@ function renderList() {
     groups.push(`<div class="note-tree">${treeHtml}</div>`);
   } else {
     groups.push(
-      `<p class="tree-empty">${
+      `<div class="tree-empty">${
         q
           ? "No private notes match that filter."
-          : "No private notes yet. Press <strong>New note</strong> above, or use the <strong>+</strong> beside a folder."
-      }</p>`
+          : `<strong>Your private vault is empty.</strong>
+             <span>Create a folder to group notes, or start a note at the root. Everything stays under <code>data/notes</code>.</span>
+             <span class="tree-empty-actions">
+               <button class="btn" type="button" data-action="new-folder">${ICON.folderPlus} New folder</button>
+               <button class="btn btn-primary" type="button" data-action="new-note">${ICON.notePlus} New note</button>
+             </span>`
+      }</div>`
     );
   }
 
-  groups.push(groupHead(`Local blog · ${state.localPosts.length}`, ICON.pencil, "new-local-post", "New local blog post"));
+  groups.push(
+    groupHead(`Local blog · ${state.localPosts.length}`, ICON.pencil, [
+      { action: "new-local-post", label: "New local blog post" },
+    ])
+  );
   const local = [...state.localPosts].sort(
     (a, b) =>
       Number(!!b.pinned) - Number(!!a.pinned) ||
@@ -510,8 +540,7 @@ function renderList() {
       groupHead(
         `GitHub Pages · ${state.workspace.repoName}`,
         ICON.pages,
-        "new-site-post",
-        "New GitHub Pages post"
+        [{ action: "new-site-post", label: "New GitHub Pages post" }]
       )
     );
     const sections = state.siteSections.length ? state.siteSections : state.workspace.sections || [];
@@ -575,6 +604,10 @@ async function handleListAction(button) {
   }
   if (action === "new-folder") {
     openNoteModal({ mode: "folder" });
+    return;
+  }
+  if (action === "new-subfolder") {
+    openNoteModal({ mode: "folder", folder: button.dataset.folder || "" });
     return;
   }
   if (action === "new-local-post") {
@@ -2142,6 +2175,63 @@ function folderOptions(selected = "") {
   return options.join("");
 }
 
+function folderDiskPath(folder = "") {
+  return folder ? `data/notes/${folder}` : "data/notes";
+}
+
+function updateNoteFolderLabels() {
+  const folder = el.noteFolder.value;
+  el.noteFolderPath.textContent = folderDiskPath(folder);
+  el.noteFolderInlineHint.textContent = `Inside ${folderDiskPath(folder)}`;
+  el.noteFolderNew.textContent = folder ? "New subfolder" : "New folder";
+  el.noteFolderNew.title = folder
+    ? `Create a subfolder inside ${folderDiskPath(folder)}`
+    : "Create a folder in data/notes";
+}
+
+function resetInlineFolder() {
+  el.noteFolderInline.hidden = true;
+  el.noteFolderName.value = "";
+}
+
+function showInlineFolder() {
+  el.noteFolderInline.hidden = false;
+  noteError("");
+  updateNoteFolderLabels();
+  el.noteFolderName.focus();
+}
+
+async function createInlineFolder() {
+  const name = el.noteFolderName.value.trim();
+  if (!name) {
+    noteError("Give the folder a name.");
+    el.noteFolderName.focus();
+    return;
+  }
+
+  const parent = el.noteFolder.value;
+  el.noteFolderCreate.disabled = true;
+  noteError("");
+  try {
+    const data = await postJson("/api/notes/folder", { parent, name });
+    if (data.parent && state.collapsedFolders.has(data.parent)) {
+      state.collapsedFolders.delete(data.parent);
+      persistCollapsed();
+    }
+    await refreshList();
+    el.noteFolder.innerHTML = folderOptions(data.path);
+    el.noteFolder.value = data.path;
+    resetInlineFolder();
+    updateNoteFolderLabels();
+    el.noteTitle.focus();
+    toast(`Private folder “${data.name}” created`);
+  } catch (err) {
+    noteError(err.message);
+  } finally {
+    el.noteFolderCreate.disabled = false;
+  }
+}
+
 function openNoteModal({ mode = "note", folder = "" } = {}) {
   state.noteModalMode = mode === "folder" ? "folder" : "note";
   state.noteDraftFolder = folder || "";
@@ -2154,10 +2244,12 @@ function openNoteModal({ mode = "note", folder = "" } = {}) {
   el.noteCreateBtn.disabled = false;
   el.noteTitle.value = "";
   el.folderName.value = "";
+  resetInlineFolder();
   el.noteFolder.innerHTML = folderOptions(state.noteDraftFolder);
   el.folderParent.innerHTML = folderOptions(state.noteDraftFolder);
   el.noteFolder.value = state.noteDraftFolder;
   el.folderParent.value = state.noteDraftFolder;
+  updateNoteFolderLabels();
   noteError("");
   el.noteModal.hidden = false;
   setTimeout(() => (isNote ? el.noteTitle : el.folderName).focus(), 40);
@@ -2165,6 +2257,7 @@ function openNoteModal({ mode = "note", folder = "" } = {}) {
 
 function closeNoteModal() {
   el.noteModal.hidden = true;
+  resetInlineFolder();
   noteError("");
 }
 
@@ -2222,6 +2315,26 @@ function initNoteModal() {
   el.noteModalClose.addEventListener("click", closeNoteModal);
   el.noteModalCancel.addEventListener("click", closeNoteModal);
   el.noteCreateBtn.addEventListener("click", createNoteFromModal);
+  el.noteFolder.addEventListener("change", updateNoteFolderLabels);
+  el.noteFolderNew.addEventListener("click", showInlineFolder);
+  el.noteFolderCreate.addEventListener("click", createInlineFolder);
+  el.noteFolderCancel.addEventListener("click", () => {
+    resetInlineFolder();
+    noteError("");
+    el.noteFolderNew.focus();
+  });
+  el.noteFolderName.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      createInlineFolder();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      resetInlineFolder();
+      noteError("");
+      el.noteFolderNew.focus();
+    }
+  });
   el.noteModal.addEventListener("click", (event) => {
     if (event.target === el.noteModal) closeNoteModal();
   });

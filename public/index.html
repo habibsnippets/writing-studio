@@ -814,17 +814,28 @@
     <div class="modal-body">
       <div class="note-private-note">
         <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.7" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.2 7V5.2a2.8 2.8 0 0 1 5.6 0V7" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-        <span>Private notes live in <code>data/notes</code> on this computer. They are never built, pushed, or mixed with GitHub Pages writing.</span>
+        <span>Private notes and folders live in <code>data/notes</code> on this computer. They are never built, pushed, or mixed with the Local blog or GitHub Pages writing.</span>
       </div>
 
       <div id="noteCreateFields">
         <label class="site-field" for="noteTitle">Note title
           <input id="noteTitle" class="site-input" type="text" placeholder="What are you thinking about?" autocomplete="off" spellcheck="true">
         </label>
-        <label class="site-field" for="noteFolder">Folder
-          <select id="noteFolder" class="site-input"></select>
-          <span class="site-hint">Folders are real directories. You can nest them as deep as you like.</span>
-        </label>
+        <div class="site-field">
+          <label for="noteFolder">Folder</label>
+          <div class="folder-picker">
+            <select id="noteFolder" class="site-input"></select>
+            <button class="btn folder-picker-new" id="noteFolderNew" type="button" title="Create a new folder here">New folder</button>
+          </div>
+          <span class="site-hint" id="noteFolderPath">data/notes</span>
+        </div>
+
+        <div class="note-folder-inline" id="noteFolderInline" hidden>
+          <input id="noteFolderName" class="site-input" type="text" placeholder="Folder name" autocomplete="off" spellcheck="true">
+          <button class="btn btn-primary" id="noteFolderCreate" type="button">Create</button>
+          <button class="btn" id="noteFolderCancel" type="button">Cancel</button>
+          <span class="site-hint" id="noteFolderInlineHint">Inside data/notes</span>
+        </div>
       </div>
 
       <div id="folderCreateFields" hidden>

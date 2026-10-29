@@ -218,18 +218,21 @@ Remote PDFs are streamed through `/api/proxy-pdf` so the browser can read them w
 
 ### Private notes
 
-The **Private notes** group in the sidebar is a real folder vault under `data/notes/`.
+The **Private notes** group in the sidebar is an Obsidian-style folder vault under `data/notes/`. Folders are real directories, so the same vault can be opened in another Markdown editor later.
 
-- **New note** creates a Markdown file and opens it immediately.
-- **+** beside the Private notes header creates a folder.
-- **+** beside a folder creates a note inside it.
-- Folders are real directories and can be nested as deep as you like.
+- The two buttons beside the **Private notes** heading create a **New private note** or a **New private folder**.
+- Each folder row has its own **new note**, **new subfolder**, and **delete folder** actions.
+- **New note** opens a note dialog with a folder picker. Choose any folder, including a deeply nested one, or leave it at the private root.
+- Press **New folder** inside the note dialog to create a folder without losing the note you are drafting. The new folder is created inside the selected folder and then selected automatically.
+- The dialog shows the destination path, such as `data/notes/Projects/Research`, before you create anything.
+- When the vault is empty, the sidebar offers **New folder** and **New note** buttons directly.
+- Folders can be expanded or collapsed. The count beside a folder includes notes in all of its subfolders.
 - Note images are stored in `data/notes/.assets/<note-key>/` and served through `/note-assets/`.
 - Notes use frontmatter for `title`, `created`, and `updated`; the body is ordinary Markdown.
 - The status chip says **Private**, and Publish / Pin / Unpublish are not offered.
 - Deleting a note or folder is permanent; the confirmation dialog tells you how many notes will be removed.
 
-Private notes never enter `content/posts.json`, `dist/`, the local blog list, a connected Pages scan, or a Pages preview.
+Private notes and folders never enter `content/posts.json`, `dist/`, the local blog list, a connected Pages scan, or a Pages preview. The sidebar keeps three separate groups: **Private notes**, **Local blog**, and **GitHub Pages**.
 
 ### AI assistant with your own key
 
