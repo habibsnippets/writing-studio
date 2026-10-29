@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Writing Studio — a local-first writing environment</title>
+<meta name="description" content="Writing Studio is a local-first writing environment for Markdown, diagrams, PDF annotation, private notes, and publishing. No account, no cloud, no telemetry.">
+<meta name="theme-color" content="#faf4e6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#09090c" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<main class="page">
+
+  <header class="hero">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/readme-hero-dark.png">
+      <img src="assets/readme-hero-light.png" alt="Writing Studio — Write, Draw, Annotate, Publish — entirely on your machine." width="1517" height="291">
+    </picture>
+  </header>
+
+  <section class="intro" aria-labelledby="intro-title">
+    <h1 id="intro-title">A calm place to write, sketch, and publish — on your own disk.</h1>
+    <p class="lede">
+      Writing Studio is a local-first writing environment for people who think in Markdown,
+      diagrams, and annotated papers. Write an article, draw the architecture beside it,
+      mark up a PDF, keep private notes in a real folder tree, and build a static blog —
+      all from one quiet interface.
+    </p>
+    <p class="lede">
+      There is no account, no cloud, no database, and no telemetry. Your writing stays as
+      plain files on your disk. The only network calls are the ones you make yourself:
+      an AI provider you configure with your own key, and the fonts used by built articles.
+    </p>
+
+    <ul class="facts" aria-label="At a glance">
+      <li>Node.js 20.11+</li>
+      <li>Linux · macOS · Windows</li>
+      <li>100% local</li>
+      <li>MIT licensed</li>
+    </ul>
+  </section>
+
+  <section class="shots" aria-labelledby="shots-title">
+    <h2 id="shots-title">Inside the studio</h2>
+    <p class="section-note">
+      One window for the article, the diagram beside it, and the rendered preview —
+      with private notes and the local blog in the same sidebar.
+    </p>
+    <figure class="shot shot-wide">
+      <a class="shot-zoom" href="assets/studio-interface.png" aria-label="View the studio screenshot full size">
+        <img src="assets/studio-interface.png"
+             alt="Writing Studio: a sidebar with private notes and local blog, a Markdown editor beside an annotated research paper, and the rendered preview."
+             width="1907" height="953" loading="lazy" decoding="async">
+      </a>
+      <figcaption>
+        Editor, annotated paper, and live preview in one window
+        <span class="shot-hint">Click to zoom</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="install" aria-labelledby="install-title">
+    <h2 id="install-title">Run it</h2>
+    <p class="section-note">
+      Pick one. Each command starts a local server on
+      <code>http://127.0.0.1:4321</code> — if that port is busy it tries 4322, 4323, and
+      so on, then prints the address it settled on. Open that address in your browser.
+    </p>
+
+    <figure class="shot shot-terminal">
+      <a class="shot-zoom" href="assets/terminal-start.png" aria-label="View the terminal screenshot full size">
+        <img src="assets/terminal-start.png"
+             alt="The Writing Studio terminal banner printed by npm start, with the local URL, folder path, and post counts."
+             width="487" height="335" loading="lazy" decoding="async">
+      </a>
+      <figcaption>
+        What <code>npm start</code> prints
+        <span class="shot-hint">Click to zoom</span>
+      </figcaption>
+    </figure>
+
+    <article class="step">
+      <div class="step-head">
+        <h3>Try it without installing</h3>
+        <span class="step-tag">recommended</span>
+      </div>
+      <p>Install nothing permanently — npm runs the package and keeps your writing in the folder you pass.</p>
+      <div class="code">
+        <pre><code>npx writing-studio ~/writing</code></pre>
+        <button class="copy" type="button" data-copy aria-label="Copy command">Copy</button>
+      </div>
+      <p class="hint">
+        Windows PowerShell:
+        <code>npx writing-studio "C:\Users\me\writing"</code>
+      </p>
+      <p class="hint">
+        Before the npm release, run the same thing straight from GitHub:
+        <code>npx github:habibsnippets/writing-studio ~/writing</code>
+      </p>
+    </article>
+
+    <article class="step">
+      <div class="step-head">
+        <h3>From source</h3>
+        <span class="step-tag">best for reading the code</span>
+      </div>
+      <p>Your writing lives in the repository folder when you run it from a clone.</p>
+      <div class="code">
+        <pre><code>git clone https://github.com/habibsnippets/writing-studio.git
+cd writing-studio
+npm install
+npm start</code></pre>
+        <button class="copy" type="button" data-copy aria-label="Copy commands">Copy</button>
+      </div>
+      <p class="hint">
+        Prefer a different port?
+        <code>PORT=5000 npm start</code> on macOS/Linux, or
+        <code>$env:PORT=5000; npm start</code> in PowerShell.
+      </p>
+    </article>
+
+    <article class="step">
+      <div class="step-head">
+        <h3>Install once, run anywhere</h3>
+      </div>
+      <div class="code">
+        <pre><code>npm install -g writing-studio
+writing-studio ~/writing</code></pre>
+        <button class="copy" type="button" data-copy aria-label="Copy commands">Copy</button>
+      </div>
+      <p class="hint">
+        Point it at any folder — Dropbox, iCloud, a Git repository. The app itself is
+        read-only inside <code>node_modules</code>; only the folder you pass receives your writing.
+      </p>
+    </article>
+
+    <details class="options">
+      <summary>Command-line options</summary>
+      <pre><code>writing-studio [folder] [options]
+
+  -d, --dir &lt;folder&gt;   Where writing is stored (default: current folder)
+  -p, --port &lt;number&gt;  Port to start on
+      --light/--dark   Terminal banner colour
+  -h, --help           Usage
+  -v, --version        Version</code></pre>
+    </details>
+  </section>
+
+  <section class="first-run" aria-labelledby="first-run-title">
+    <h2 id="first-run-title">The first start</h2>
+    <p>
+      Writing Studio creates its store in the folder you chose and seeds a generic
+      “Welcome to Writing Studio” article, so the studio opens with something to read.
+      Nothing is ever overwritten.
+    </p>
+    <ul class="folders">
+      <li><code>content/</code><span>your publishable local blog</span></li>
+      <li><code>data/notes/</code><span>your private note vault</span></li>
+      <li><code>dist/</code><span>generated static pages</span></li>
+    </ul>
+  </section>
+
+  <section class="author" aria-labelledby="author-title">
+    <p class="author-label" id="author-title">Developed by</p>
+    <a class="author-link" href="https://habibsnippets.github.io/" target="_blank" rel="noopener noreferrer">
+      habibsnippets
+      <svg class="author-arrow" width="18" height="18" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg>
+    </a>
+    <p class="author-note">More projects and writing at the portfolio.</p>
+  </section>
+
+</main>
+
+<dialog class="lightbox" id="lightbox" aria-label="Screenshot preview">
+  <button class="lightbox-close" type="button" aria-label="Close preview">Close</button>
+  <img alt="">
+</dialog>
+
+<footer class="footer">
+  <span class="footer-brand"><span class="footer-mark" role="img" aria-label="Writing Studio logo"></span> Writing Studio</span>
+  <span class="dot" aria-hidden="true">·</span>
+  <a href="https://github.com/habibsnippets/writing-studio">GitHub</a>
+  <span class="dot" aria-hidden="true">·</span>
+  <a href="https://github.com/habibsnippets/writing-studio/blob/main/LICENSE">MIT license</a>
+</footer>
+
+<script>
+  for (const button of document.querySelectorAll("[data-copy]")) {
+    button.addEventListener("click", async () => {
+      const code = button.closest(".code").querySelector("code");
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(code.textContent);
+        copied = true;
+      } catch {
+        // Clipboard API needs a secure context; select the text instead.
+        const range = document.createRange();
+        range.selectNodeContents(code);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      button.textContent = copied ? "Copied" : "Press Ctrl+C";
+      button.dataset.done = "true";
+      setTimeout(() => {
+        button.textContent = "Copy";
+        delete button.dataset.done;
+      }, 1800);
+    });
+  }
+
+  // Screenshots: hover lifts the frame, click opens the full-size view.
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImage = lightbox.querySelector("img");
+
+  for (const link of document.querySelectorAll(".shot-zoom")) {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      lightboxImage.src = link.getAttribute("href");
+      lightboxImage.alt = link.querySelector("img").alt;
+      document.body.classList.add("is-zoomed");
+      if (typeof lightbox.showModal === "function") lightbox.showModal();
+      else lightbox.setAttribute("open", "");
+    });
+  }
+
+  lightbox.addEventListener("click", (event) => {
+    if (event.target === lightbox) lightbox.close();
+  });
+  lightbox.querySelector(".lightbox-close").addEventListener("click", () => lightbox.close());
+  lightbox.addEventListener("close", () => {
+    document.body.classList.remove("is-zoomed");
+    lightboxImage.removeAttribute("src");
+  });
+</script>
+</body>
+</html>
