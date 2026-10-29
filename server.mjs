@@ -387,13 +387,19 @@ async function api(req, res, url) {
     try {
       const workspace = await readWorkspace();
       if (!workspace) return send(res, 404, { error: "No GitHub Pages site is connected." });
-      const { meta = {}, markdown = "", legacyHtml = null } = await json(req);
+      const { meta = {}, markdown = "", legacyHtml = null, tex = false } = await json(req);
       const assetInfo = await sitePreviewInfo(workspace, meta);
 
       let body;
       let words;
       let hasMath = false;
-      if (legacyHtml !== null && legacyHtml !== undefined) {
+      if (tex) {
+        /* The studio does not compile LaTeX. Show the source so the
+           preview pane is honest about what it is. */
+        const source = String(markdown).replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]);
+        body = `<pre class="tex-source" style="white-space:pre-wrap;font:14px/1.6 ui-monospace,monospace">${source}</pre>`;
+        words = source.split(/\s+/).filter(Boolean).length;
+      } else if (legacyHtml !== null && legacyHtml !== undefined) {
         /* Imported Bearblog posts are stored as raw HTML fragments.
            Route their root-relative images through the studio's
            read-only asset server before dropping them into the shell. */

@@ -393,6 +393,91 @@ async function main() {
     const hugoRoutes = hugoScan.sections.find((sec) => sec.kind === "pages");
     check("a wrapper folder has no /content/ route", !hugoRoutes || hugoRoutes.route === "", hugoRoutes?.route);
 
+    /* --- a site whose posts are written in LaTeX ------------- */
+    const texDir = path.join(root, "latex site");
+    await mkdir(path.join(texDir, "posts"), { recursive: true });
+    const texPath = path.join(texDir, "posts", "2026-02-03-on-limits.tex");
+    const texOriginal = [
+      "\\documentclass{article}",
+      "\\usepackage{amsmath} % math",
+      "% \\title{commented out}",
+      "\\title{On \\textbf{Limits}}",
+      "\\date{February 3, 2026}",
+      "\\begin{document}",
+      "\\maketitle",
+      "",
+      "A limit describes where a sequence is heading, and this paragraph is long enough to count.",
+      "",
+      "$$\\lim_{n\\to\\infty} 1/n = 0$$",
+      "\\end{document}",
+      "",
+    ].join("\n");
+    await writeFile(texPath, texOriginal);
+    await writeFile(path.join(texDir, "posts", "second.tex"), "\\begin{document}\nJust a fragment of text without a preamble.\n\\end{document}\n");
+    const texScan = (await (await post("/api/workspace/scan", { repoRoot: texDir })).json()).scan;
+    const texSection = texScan?.sections?.find((sec) => sec.root === "posts");
+    check(
+      "LaTeX posts are discovered as a ticked section",
+      !!texSection && texSection.count === 2 && texSection.format === ".tex" && texSection.defaultInclude,
+      JSON.stringify(texScan?.sections)
+    );
+    await post("/api/workspace/connect", { ...texScan, sections: [texSection] });
+    const texPosts = (await (await fetch(base + "/api/workspace/posts")).json()).posts || [];
+    const limits = texPosts.find((p) => p.path === "posts/2026-02-03-on-limits.tex");
+    check(
+      "LaTeX title and date come from \\title and \\date, not comments",
+      limits?.title === "On Limits" && limits.dateISO === "2026-02-03",
+      JSON.stringify(limits)
+    );
+    check("a LaTeX file without \\title falls back to its filename", texPosts.some((p) => p.path === "posts/second.tex" && p.title === "Second"));
+    const texGet = await (await fetch(base + "/api/workspace/post?id=" + encodeURIComponent("posts/2026-02-03-on-limits.tex"))).json();
+    check(
+      "the editor gets only the text inside the document",
+      texGet.markdown?.startsWith("\\maketitle") && !texGet.markdown.includes("documentclass") && !texGet.markdown.includes("end{document}"),
+      JSON.stringify(texGet.markdown)
+    );
+    const unchanged = await (
+      await post("/api/workspace/post", { meta: { id: texGet.meta.id, title: texGet.meta.title, dateISO: texGet.meta.dateISO, description: texGet.meta.description }, markdown: texGet.markdown })
+    ).json();
+    check("saving a LaTeX post unchanged leaves the file byte-identical", (await readFile(texPath, "utf8")) === texOriginal && !unchanged.error, unchanged.error);
+    const edited = await (
+      await post("/api/workspace/post", {
+        meta: { id: texGet.meta.id, title: "Limits & Bounds", dateISO: "2026-03-04", description: texGet.meta.description },
+        markdown: texGet.markdown.replace("heading", "going"),
+      })
+    ).json();
+    const texAfter = await readFile(texPath, "utf8");
+    check(
+      "editing a LaTeX post changes only title, date and body",
+      !edited.error &&
+        texAfter.includes("\\title{Limits \\& Bounds}") &&
+        texAfter.includes("\\date{2026-03-04}") &&
+        texAfter.includes("% \\title{commented out}") &&
+        texAfter.includes("\\usepackage{amsmath} % math") &&
+        texAfter.includes("is going") &&
+        texAfter.endsWith("\\end{document}\n"),
+      edited.error || texAfter
+    );
+    const texNew = await (
+      await post("/api/workspace/post", { meta: { title: "Fresh Idea", dateISO: "2026-05-06", sectionId: texSection.id, draft: false }, markdown: "Some words.\n" })
+    ).json();
+    const texNewText = await readFile(path.join(texDir, texNew.meta?.path || "missing"), "utf8").catch(() => "");
+    check(
+      "a new post in a LaTeX section is a complete .tex file",
+      texNew.meta?.path === "posts/2026-05-06-fresh-idea.tex" && texNewText.includes("\\begin{document}") && texNewText.includes("\\title{Fresh Idea}") && texNewText.includes("Some words."),
+      texNew.meta?.path || texNew.error
+    );
+    const texPreview = await (await post("/api/workspace/preview", { meta: { slug: "x", title: "T" }, markdown: "a < b & \\alpha", tex: true })).json();
+    check("the LaTeX preview shows escaped source", texPreview.html?.includes("a &lt; b &amp; \\alpha"), texPreview.error);
+    const texRemoved = await post("/api/workspace/remove", { id: "posts/second.tex" });
+    check("a LaTeX post can be removed", texRemoved.status === 200 && !(await stat(path.join(texDir, "posts", "second.tex")).then(() => true, () => false)));
+
+    /* A repo that is plainly a LaTeX project must not hijack a Markdown site. */
+    check(
+      "Markdown sites are unaffected by the LaTeX scanner",
+      hugoScan.sections.every((sec) => !(sec.formats || []).includes(".tex"))
+    );
+
     /* --- a brand-new site: folders that exist but are still empty --- */
     const newDir = path.join(root, "new site");
     for (const name of ["blogs", "notes", "articles"]) await mkdir(path.join(newDir, name), { recursive: true });

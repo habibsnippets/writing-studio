@@ -163,6 +163,7 @@ const state = {
   meta: null, // saved metadata for the open document, null for a brand-new one
   removal: null,
   legacy: false,
+  tex: false,
   dirty: false,
   saving: false,
   slugLocked: false,
@@ -659,6 +660,7 @@ async function openPost(key, source = "local") {
   state.source = source;
   state.meta = data.meta;
   state.legacy = source === "note" ? false : data.readOnly === true || (data.markdown === null && !!data.legacyHtml);
+  state.tex = source === "site" && data.meta.format === ".tex";
   state.slugLocked = true;
   state.dirty = false;
   state.targetSection = data.meta.sectionId || state.targetSection;
@@ -670,7 +672,7 @@ async function openPost(key, source = "local") {
   el.desc.value = data.meta.description || "";
   el.editor.value = data.markdown ?? data.legacyHtml ?? "";
   el.editor.disabled = state.legacy;
-  el.toolbar.hidden = state.legacy;
+  el.toolbar.hidden = state.legacy || state.tex;
   el.saveBtn.disabled = state.legacy;
   el.publishBtn.disabled = state.legacy;
 
@@ -698,6 +700,12 @@ async function openPost(key, source = "local") {
   } else {
     el.preview.removeAttribute("src");
     renderPreview();
+    if (state.tex) {
+      showBanner(
+        "note",
+        "<strong>LaTeX post.</strong> You are editing the text between <code>\\begin{document}</code> and <code>\\end{document}</code>. Title and date are saved to <code>\\title</code> and <code>\\date</code>; the preview shows the source, so build the PDF or page with your usual LaTeX workflow."
+      );
+    }
   }
 
   /* Each document gets its own local diagram scene. */
@@ -1079,6 +1087,7 @@ async function renderPreview() {
     } else {
       endpoint = state.source === "site" ? "/api/workspace/preview" : "/api/preview";
       payload = { meta: collectMeta() };
+      if (state.tex) payload.tex = true;
       if (state.legacy) payload.legacyHtml = el.editor.value;
       else payload.markdown = el.editor.value;
     }
@@ -1623,6 +1632,7 @@ function resetEditor(sectionId = null, source = state.source || null) {
   state.source = source;
   state.meta = null;
   state.legacy = false;
+  state.tex = false;
   state.dirty = false;
   state.slugLocked = false;
   state.words = 0;
@@ -2741,6 +2751,7 @@ async function enterWorkspace(workspace) {
   state.sitePosts = [];
   state.meta = null;
   state.legacy = false;
+  state.tex = false;
   state.dirty = false;
   el.search.value = "";
   hideBanner();
@@ -2797,6 +2808,7 @@ async function disconnectSite() {
       state.targetSection = null;
       state.meta = null;
       state.legacy = false;
+      state.tex = false;
       state.dirty = false;
     }
     el.search.value = "";
