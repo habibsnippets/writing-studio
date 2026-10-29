@@ -393,6 +393,32 @@ async function main() {
     const hugoRoutes = hugoScan.sections.find((sec) => sec.kind === "pages");
     check("a wrapper folder has no /content/ route", !hugoRoutes || hugoRoutes.route === "", hugoRoutes?.route);
 
+    /* --- a brand-new site: folders that exist but are still empty --- */
+    const newDir = path.join(root, "new site");
+    for (const name of ["blogs", "notes", "articles"]) await mkdir(path.join(newDir, name), { recursive: true });
+    const fresh = (await (await post("/api/workspace/scan", { repoRoot: newDir })).json()).scan;
+    check(
+      "empty blogs / notes / articles folders are offered",
+      ["articles", "blogs", "notes"].every((name) => fresh?.sections?.some((sec) => sec.root === name && sec.defaultInclude && sec.count === 0)),
+      JSON.stringify(fresh?.sections?.map((sec) => sec.root))
+    );
+    const typed = (await (await post("/api/workspace/inspect", { repoRoot: newDir, folder: "journal/2026" })).json()).section;
+    check("a folder that does not exist yet can be added", typed?.willCreate === true && typed.root === "journal/2026", JSON.stringify(typed));
+    const outside = await post("/api/workspace/inspect", { repoRoot: newDir, folder: "../escape" });
+    check("a new folder cannot leave the site", outside.status === 400);
+
+    await post("/api/workspace/connect", { ...fresh, sections: [...fresh.sections, typed] });
+    check("connecting creates the typed folder", await stat(path.join(newDir, "journal", "2026")).then((i) => i.isDirectory(), () => false));
+    const firstPost = await (
+      await post("/api/workspace/post", {
+        meta: { title: "First note", dateISO: "2026-04-01", sectionId: fresh.sections.find((sec) => sec.root === "notes").id, draft: false },
+        markdown: "Hello.\n",
+      })
+    ).json();
+    check("the first post is written into the empty folder", firstPost.meta?.path === "notes/first-note.md", firstPost.meta?.path || firstPost.error);
+    const afterFirst = (await (await fetch(base + "/api/workspace/posts")).json()).sections || [];
+    check("empty sections stay listed alongside filled ones", afterFirst.length === 4, JSON.stringify(afterFirst.map((sec) => [sec.root, sec.count])));
+
     /* The removal commands are printed for people to paste. Windows uses
        PowerShell syntax; the platform is switched in-process to check it. */
     const { removalCommands } = await import("../lib/site-archive.mjs");

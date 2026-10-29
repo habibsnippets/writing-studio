@@ -555,7 +555,9 @@ function renderList() {
           String(post.slug || "").toLowerCase().includes(q) ||
           String(post.path || "").toLowerCase().includes(q)
       );
-      if (!matching.length) continue;
+      /* An empty section still shows, so a new site's blog / notes /
+         articles folders appear in the sidebar before the first post. */
+      if (!matching.length && (q || posts.length)) continue;
       siteHtml += `<div class="group group-sub">${escapeHtml(section.name)} · ${matching.length}</div>`;
       siteHtml += matching.map((post) => renderSiteItem(post, "")).join("");
     }

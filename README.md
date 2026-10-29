@@ -313,6 +313,7 @@ Once connected:
 - The sidebar lists writing grouped by section. Open a file, edit it, and press **Save** — the source file is written in place.
 - **Autosave is off by default for a connected site**, because it is your real repository. Press **Ctrl/Cmd+S** or **Save**, or tick **Autosave** under the editor to opt in; the choice is remembered. Moving to another post with unsaved edits asks whether to save them. Local posts and private notes autosave by default.
 - If the scan finds nothing, the wizard says why. A blog written as folder-style HTML (`blog/my-post/index.html`) is offered as an unticked section, since the same layout is also what a site build produces; tick it only if you edit those pages by hand.
+- **Starting a brand-new site?** Empty folders named like `blog`, `notes` or `articles` are offered even before they hold a post, and appear in the sidebar as empty sections. To use a name the scanner doesn't know, type it in **Add folder**; a folder that doesn't exist yet is created when you click Connect, and nowhere else.
 - Posts stored as page bundles (`my-post/index.md`) are named after their folder.
 - New posts follow the site's existing conventions. Jekyll-style `_drafts` is supported: choose the **Drafts** section to create a draft there.
 - Images are saved under the site's detected asset folder (for example `assets/writing-studio/<post>/`) and inserted with the correct public path.
