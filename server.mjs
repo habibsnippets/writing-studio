@@ -187,6 +187,14 @@ const prettyDate = (iso) => {
 };
 
 function send(res, code, body, type = "application/json") {
+  /* Node errors carry string codes such as "ENOENT"; those are not HTTP
+     statuses. A file that vanished from disk is a 404, anything else 500. */
+  if (!Number.isInteger(code) || code < 100 || code > 599) {
+    code = code === "ENOENT" || code === "ENOTDIR" ? 404 : 500;
+    if (body && typeof body === "object" && code === 404 && body.error) {
+      body = { ...body, error: "That file no longer exists on disk. Refresh the list." };
+    }
+  }
   const payload = type === "application/json" ? JSON.stringify(body) : body;
   res.writeHead(code, {
     "content-type": type,

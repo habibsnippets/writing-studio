@@ -311,6 +311,9 @@ The studio starts disconnected every time it opens, even if a site is already sa
 Once connected:
 
 - The sidebar lists writing grouped by section. Open a file, edit it, and press **Save** — the source file is written in place.
+- **Autosave is off by default for a connected site**, because it is your real repository. Press **Ctrl/Cmd+S** or **Save**, or tick **Autosave** under the editor to opt in; the choice is remembered. Moving to another post with unsaved edits asks whether to save them. Local posts and private notes autosave by default.
+- If the scan finds nothing, the wizard says why. A blog written as folder-style HTML (`blog/my-post/index.html`) is offered as an unticked section, since the same layout is also what a site build produces; tick it only if you edit those pages by hand.
+- Posts stored as page bundles (`my-post/index.md`) are named after their folder.
 - New posts follow the site's existing conventions. Jekyll-style `_drafts` is supported: choose the **Drafts** section to create a draft there.
 - Images are saved under the site's detected asset folder (for example `assets/writing-studio/<post>/`) and inserted with the correct public path.
 - If a section has a `posts.json` index, the studio uses it for titles, dates, descriptions, and word counts, and hides known non-post files such as `README.md` or migration notes. Saving a Markdown post keeps its `posts.json` entry in step.

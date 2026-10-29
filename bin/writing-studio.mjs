@@ -128,4 +128,4 @@ const { startServer } = await import("../server.mjs");
 
 /* The banner prints the folder, the URL and the version, so the CLI does
    not need to duplicate any of it. */
-await startServer(options.port ?? Number(process.env.PORT) ?? 4321);
+await startServer(options.port ?? (Number(process.env.PORT) || 4321));

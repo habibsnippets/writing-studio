@@ -279,6 +279,163 @@ async function main() {
     );
     const workspaceRaw = await readFile(workspaceFile, "utf8").catch(() => "");
     check("workspace points at the chosen site", workspaceRaw.includes(siteDir.replace(/\\/g, "\\\\")) || workspaceRaw.includes(JSON.stringify(siteDir).slice(1, -1)));
+
+    /* --- other site layouts: Hugo (TOML), templates, non-Latin titles --- */
+    const hugoDir = path.join(root, "hugo site");
+    await mkdir(path.join(hugoDir, "content", "posts"), { recursive: true });
+    await mkdir(path.join(hugoDir, "layouts", "partials"), { recursive: true });
+    await mkdir(path.join(hugoDir, "themes", "t", "layouts"), { recursive: true });
+    await writeFile(path.join(hugoDir, "hugo.toml"), "baseURL = 'https://example.org/'\n");
+    const tomlPost = "+++\ntitle = 'TOML post'\ndate = 2026-02-01\ndraft = false\n\n[params]\nx = 1\n+++\n\n# TOML post\n\nBody.\n";
+    await writeFile(path.join(hugoDir, "content", "posts", "toml.md"), tomlPost);
+    for (const name of ["a", "b", "c"]) {
+      await writeFile(path.join(hugoDir, "layouts", "partials", `${name}.html`), "<p></p>");
+      await writeFile(path.join(hugoDir, "themes", "t", "layouts", `${name}.html`), "<p></p>");
+    }
+
+    const post = (route, payload) =>
+      fetch(base + route, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+
+    const hugoScan = (await (await post("/api/workspace/scan", { repoRoot: hugoDir })).json()).scan;
+    check("Hugo site is detected", hugoScan?.generator === "hugo", hugoScan?.generator);
+    check(
+      "templates and themes are not offered as writing",
+      !!hugoScan && hugoScan.sections.every((sec) => sec.root === "content/posts"),
+      JSON.stringify(hugoScan?.sections?.map((sec) => sec.root))
+    );
+    check("Hugo images go to static/", hugoScan?.asset?.dir === "static", JSON.stringify(hugoScan?.asset));
+
+    await post("/api/workspace/connect", { ...hugoScan, sections: hugoScan.sections });
+    const tomlList = await (await fetch(base + "/api/workspace/posts")).json();
+    const tomlMeta = (tomlList.posts || []).find((p) => p.id.endsWith("toml.md"));
+    check("TOML frontmatter title is read", tomlMeta?.title === "TOML post", tomlMeta?.title);
+
+    await post("/api/workspace/post", {
+      meta: { id: tomlMeta.id, title: "TOML post", dateISO: "2026-02-01", draft: false },
+      markdown: "\n# TOML post\n\nBody.\n",
+    });
+    const tomlAfter = await readFile(path.join(hugoDir, "content", "posts", "toml.md"), "utf8");
+    check("saving a TOML post leaves its frontmatter alone", tomlAfter === tomlPost, JSON.stringify(tomlAfter.slice(0, 60)));
+
+    const arabic = await (
+      await post("/api/workspace/post", {
+        meta: { title: "مقالة جديدة", dateISO: "2026-03-01", sectionId: hugoScan.sections[0].id, draft: false },
+        markdown: "نص\n",
+      })
+    ).json();
+    check("a non-Latin title keeps a readable filename", /مقالة/.test(arabic.meta?.path || ""), arabic.meta?.path || arabic.error);
+
+    const gone = await fetch(base + "/api/workspace/post?id=" + encodeURIComponent("content/posts/missing.md"));
+    check("a file deleted outside the studio is a clean 404", gone.status === 404, `status ${gone.status}`);
+
+    /* --- bundles, descriptions, newlines, image names, folder-style HTML --- */
+    await mkdir(path.join(hugoDir, "content", "posts", "my-bundle"), { recursive: true });
+    await writeFile(path.join(hugoDir, "content", "posts", "my-bundle", "index.md"), "---\ntitle: Bundle\n---\n\nBundle body.\n");
+    await writeFile(path.join(hugoDir, "content", "posts", "no-newline.md"), "# No newline\n\nlast line");
+    await post("/api/workspace/connect", { ...hugoScan, sections: hugoScan.sections });
+    const hugoPosts = (await (await fetch(base + "/api/workspace/posts")).json()).posts || [];
+    check(
+      "a page bundle is named after its folder",
+      hugoPosts.find((p) => p.id.endsWith("my-bundle/index.md"))?.slug === "my-bundle",
+      JSON.stringify(hugoPosts.map((p) => p.slug))
+    );
+
+    await post("/api/workspace/post", {
+      meta: { id: "content/posts/no-newline.md", title: "No newline", dateISO: "", description: "Typed by hand" },
+      markdown: "# No newline\n\nlast line edited",
+    });
+    const noNl = await readFile(path.join(hugoDir, "content", "posts", "no-newline.md"), "utf8");
+    check("a file without a trailing newline does not gain one", noNl.endsWith("edited"), JSON.stringify(noNl.slice(-20)));
+    check("a typed description is written even if no sample file had one", /description: Typed by hand/.test(noNl), noNl);
+
+    const upload = async (filename) => {
+      const res = await fetch(base + "/api/workspace/upload?id=" + encodeURIComponent("content/posts/no-newline.md"), {
+        method: "POST",
+        headers: { "x-filename": encodeURIComponent(filename) },
+        body: Buffer.from("png"),
+      });
+      return res.json();
+    };
+    check("a Cyrillic image name is kept", (await upload("фото.png")).name === "фото.png");
+    check("an upper-case extension is normalised", (await upload("Photo One.PNG")).name === "photo-one.png");
+
+    const htmlDir = path.join(root, "html blog");
+    await mkdir(path.join(htmlDir, "blog", "first-post"), { recursive: true });
+    await mkdir(path.join(htmlDir, "blog", "second-post"), { recursive: true });
+    await writeFile(path.join(htmlDir, "blog", "index.html"), "<html><h1>Blog</h1></html>");
+    await writeFile(path.join(htmlDir, "blog", "first-post", "index.html"), "<html><h1>First post</h1><p>Body</p></html>");
+    await writeFile(path.join(htmlDir, "blog", "second-post", "index.html"), "<html><h1>Second post</h1></html>");
+    const htmlScan = (await (await post("/api/workspace/scan", { repoRoot: htmlDir })).json()).scan;
+    const htmlSection = htmlScan?.sections?.find((sec) => sec.root === "blog");
+    check(
+      "folder-style HTML posts are offered but not ticked",
+      !!htmlSection && htmlSection.nestedHtml && !htmlSection.defaultInclude && htmlSection.count === 2,
+      JSON.stringify(htmlScan?.sections)
+    );
+    await post("/api/workspace/connect", { ...htmlScan, sections: [htmlSection] });
+    const htmlPosts = (await (await fetch(base + "/api/workspace/posts")).json()).posts || [];
+    check(
+      "folder-style HTML posts list by folder name, not the blog index",
+      htmlPosts.length === 2 && htmlPosts.some((p) => p.slug === "first-post" && p.title === "First post"),
+      JSON.stringify(htmlPosts.map((p) => [p.path, p.slug])) 
+    );
+
+    const lostDir = path.join(root, "unrecognised");
+    await mkdir(path.join(lostDir, "stuff"), { recursive: true });
+    await writeFile(path.join(lostDir, "stuff", "a.md"), "# A");
+    const lost = (await (await post("/api/workspace/scan", { repoRoot: lostDir })).json()).scan;
+    check(
+      "an empty scan explains itself",
+      lost?.sections?.length === 0 && lost.warnings.some((w) => /Add folder/.test(w)),
+      JSON.stringify(lost?.warnings)
+    );
+
+    const hugoRoutes = hugoScan.sections.find((sec) => sec.kind === "pages");
+    check("a wrapper folder has no /content/ route", !hugoRoutes || hugoRoutes.route === "", hugoRoutes?.route);
+
+    /* The removal commands are printed for people to paste. Windows uses
+       PowerShell syntax; the platform is switched in-process to check it. */
+    const { removalCommands } = await import("../lib/site-archive.mjs");
+    const realPlatform = process.platform;
+    const sample = { repoRoot: "C:\\Users\\O'Brien\\my site" };
+    const args = { title: "It's a post", build: { command: "npm run build" }, cleanup: { path: "writing/it-s" } };
+    let winCommands;
+    let posixCommands;
+    try {
+      Object.defineProperty(process, "platform", { value: "win32" });
+      winCommands = removalCommands(sample, args);
+      Object.defineProperty(process, "platform", { value: "linux" });
+      posixCommands = removalCommands(sample, args);
+    } finally {
+      Object.defineProperty(process, "platform", { value: realPlatform });
+    }
+    check(
+      "Windows removal commands use PowerShell syntax",
+      winCommands[0] === "Set-Location 'C:\\Users\\O''Brien\\my site'" &&
+        winCommands[1].startsWith("Remove-Item -Recurse -Force") &&
+        !winCommands.some((c) => c.includes("rm -rf")) &&
+        winCommands.includes("git commit -m 'Remove It''s a post'"),
+      JSON.stringify(winCommands)
+    );
+    check("POSIX removal commands still use sh syntax", posixCommands[0].startsWith("cd '") && posixCommands[1].startsWith("rm -rf"));
+
+    /* The CLI must start with no --port at all (the PORT variable is the
+       only other input), which is how `npx writing-studio` runs. */
+    const bare = spawn(process.execPath, [BIN, "--dir", dataDir], {
+      cwd: APP_DIR,
+      env: { ...process.env, NO_COLOR: "1", PORT: String(await freePort()) },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const bareOut = await new Promise((resolve) => {
+      let text = "";
+      const done = () => resolve(text);
+      bare.stdout.on("data", (c) => { text += c; if (/127\.0\.0\.1:\d+/.test(text)) done(); });
+      bare.stderr.on("data", (c) => { text += c; });
+      bare.once("exit", done);
+      setTimeout(done, 15_000);
+    });
+    bare.kill();
+    check("the CLI starts without --port", /127\.0\.0\.1:\d+/.test(bareOut), bareOut.slice(0, 200));
   } finally {
     studio.child.kill();
     await new Promise((resolve) => {

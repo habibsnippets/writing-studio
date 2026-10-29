@@ -68,6 +68,7 @@ const el = {
   linkSuggestKeep: $("linkSuggestKeep"),
   stats: $("stats"),
   savedState: $("savedState"),
+  autosave: $("autosaveToggle"),
   preview: $("preview"),
   previewState: $("previewState"),
   recompileBtn: $("recompileBtn"),
@@ -642,7 +643,7 @@ el.search.addEventListener("input", renderList);
 /* --- opening ----------------------------------------------- */
 
 async function openPost(key, source = "local") {
-  if (state.dirty) await save({ silent: true });
+  await flushDirty();
 
   let data;
   if (source === "note") {
@@ -770,6 +771,7 @@ function showScope(scope, html) {
 }
 
 function updateChrome() {
+  syncAutosaveToggle();
   const meta = state.meta;
   const source = state.source;
   const draft = meta ? !!meta.draft : true;
@@ -839,9 +841,50 @@ function updateChrome() {
   applyWorkspaceChrome();
 }
 
+/* Autosave is remembered per kind of writing. Local posts and private
+   notes live in the studio's own folder, so it defaults on. A connected
+   Pages site is the person's real repository: it defaults off, and they
+   opt in. */
+function autosaveKey() {
+  return state.source === "site" ? "autosave:site" : "autosave:local";
+}
+
+function autosaveOn() {
+  let stored = null;
+  try { stored = localStorage.getItem(autosaveKey()); } catch (e) {}
+  if (stored === "1") return true;
+  if (stored === "0") return false;
+  return state.source !== "site";
+}
+
+function syncAutosaveToggle() {
+  if (el.autosave) el.autosave.checked = autosaveOn();
+}
+
+/* Moving away from unsaved edits: save them when autosave is on, ask
+   when it is off, so a manual-save repo never changes behind the back. */
+async function flushDirty() {
+  if (!state.dirty) return true;
+  if (autosaveOn() || state.source !== "site") {
+    return !!(await save({ silent: true }));
+  }
+  const name = state.meta?.title || el.title.value || "this post";
+  if (confirm(`Save your changes to “${name}” in your site before leaving?\n\nOK saves them. Cancel discards them.`)) {
+    return !!(await save({ silent: true }));
+  }
+  state.dirty = false;
+  return true;
+}
+
+el.autosave?.addEventListener("change", () => {
+  try { localStorage.setItem(autosaveKey(), el.autosave.checked ? "1" : "0"); } catch (e) {}
+  if (el.autosave.checked && state.dirty) scheduleSave();
+  else if (state.dirty) markDirty();
+});
+
 function markDirty() {
   state.dirty = true;
-  el.savedState.textContent = "unsaved changes";
+  el.savedState.textContent = autosaveOn() ? "unsaved changes" : "unsaved — press Ctrl/Cmd+S to save";
   el.savedState.dataset.state = "dirty";
 }
 
@@ -973,6 +1016,7 @@ async function save({ silent = false } = {}) {
 let saveTimer;
 function scheduleSave() {
   clearTimeout(saveTimer);
+  if (!autosaveOn()) return;
   saveTimer = setTimeout(() => {
     if (state.dirty) save({ silent: true });
   }, 1400);
@@ -1326,7 +1370,7 @@ async function publish() {
     const saved = await save({ silent: true });
     if (!saved) return toast("Add a title first");
   }
-  if (state.dirty) await save({ silent: true });
+  await flushDirty();
 
   el.publishBtn.disabled = true;
   el.publishBtn.textContent = "Building…";
@@ -1493,10 +1537,7 @@ async function removeSitePost() {
   );
   if (!ok) return;
 
-  if (state.dirty) {
-    const saved = await save({ silent: true });
-    if (!saved) return;
-  }
+  if (!(await flushDirty())) return;
 
   try {
     const data = await postJson("/api/workspace/remove", { id: state.meta.id });
@@ -1630,17 +1671,17 @@ function resetEditor(sectionId = null, source = state.source || null) {
 }
 
 async function startNewNote(folder = "") {
-  if (state.dirty) await save({ silent: true });
+  await flushDirty();
   openNoteModal({ mode: "note", folder });
 }
 
 async function startNewLocalPost() {
-  if (state.dirty) await save({ silent: true });
+  await flushDirty();
   resetEditor(null, "local");
 }
 
 async function startNewSitePost() {
-  if (state.dirty) await save({ silent: true });
+  await flushDirty();
   if (!state.workspace) return toast("Connect a GitHub Pages site first");
   const sections = state.siteSections.length ? state.siteSections : state.workspace.sections || [];
   if (!sections.length) return toast("No writing sections are connected");
@@ -2540,6 +2581,7 @@ function selectedSiteSections() {
       formats: section.formats,
       defaultInclude: section.defaultInclude,
       directOnly: section.directOnly,
+      nestedHtml: section.nestedHtml,
       datePrefix: section.datePrefix,
       route: section.route,
     }));
@@ -2629,10 +2671,7 @@ async function connectSiteFromWizard() {
     return;
   }
 
-  if (state.dirty) {
-    const saved = await save({ silent: true });
-    if (!saved) return;
-  }
+  if (!(await flushDirty())) return;
 
   siteError("");
   setSiteBusy(true, "Connecting…");
@@ -2670,10 +2709,7 @@ async function resumeSavedWorkspace() {
     return;
   }
 
-  if (state.dirty) {
-    const saved = await save({ silent: true });
-    if (!saved) return;
-  }
+  if (!(await flushDirty())) return;
 
   siteError("");
   setSiteBusy(true, "Reconnecting…");
@@ -2746,10 +2782,7 @@ async function disconnectSite() {
     `Disconnect ${state.workspace.repoName}?\n\nYour writing files will stay exactly where they are. The studio will simply stop showing this site.`
   );
   if (!ok) return;
-  if (state.dirty) {
-    const saved = await save({ silent: true });
-    if (!saved) return;
-  }
+  if (!(await flushDirty())) return;
   try {
     await postJson("/api/workspace/disconnect", {});
     closeSiteModal();

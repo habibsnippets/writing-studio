@@ -2158,3 +2158,14 @@ select.site-input {
   .focus-label { display: none; }
   .focus-action { padding: 0 7px; }
 }
+
+.autosave-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-faint);
+  font-size: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.autosave-toggle input { margin: 0; accent-color: var(--teal, currentColor); cursor: pointer; }
