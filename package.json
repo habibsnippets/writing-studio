@@ -1,0 +1,41 @@
+{
+  "name": "writing-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local-first writing studio for Markdown, diagrams, PDF annotation, private notes, and GitHub Pages publishing.",
+  "keywords": [
+    "writing",
+    "markdown",
+    "blog",
+    "diagrams",
+    "pdf",
+    "local-first",
+    "github-pages",
+    "katex"
+  ],
+  "type": "module",
+  "main": "server.mjs",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "writing-studio": "node server.mjs",
+    "build": "node lib/builder.mjs",
+    "check": "node --check server.mjs && node --check public/studio.js && node --check public/canvas.js && node --check public/main.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/habibsnippets/writing-studio.git"
+  },
+  "homepage": "https://github.com/habibsnippets/writing-studio#readme",
+  "bugs": {
+    "url": "https://github.com/habibsnippets/writing-studio/issues"
+  },
+  "author": "habibsnippets",
+  "dependencies": {
+    "katex": "^0.16.47",
+    "marked": "^15.0.12",
+    "pdfjs-dist": "^6.4.299"
+  }
+}

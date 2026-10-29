@@ -1,0 +1,14 @@
+[
+  {
+    "slug": "welcome-to-writing-studio",
+    "title": "Welcome to Writing Studio",
+    "date": "25 Oct, 2026",
+    "dateISO": "2026-10-25",
+    "description": "A calm, local-first studio for Markdown writing, diagrams, PDF annotation, private notes, and publishing.",
+    "words": 474,
+    "minutes": 2,
+    "tag": "guide",
+    "draft": false,
+    "pinned": true
+  }
+]
