@@ -921,6 +921,26 @@ function showBanner(kind, html) {
   el.banner.innerHTML = html;
 }
 
+/* Tell clones when GitHub has newer studio code. Pulling is safe: posts,
+   notes and the built site live in git-ignored folders. */
+async function checkForUpdate() {
+  try {
+    const info = await api("/api/update");
+    if (!info.available || !el.banner.hidden) return;
+    const cmd = "git pull && npm install";
+    const note = info.localEdits
+      ? " You have local edits to studio files, so commit or stash them first."
+      : " Your writing is not touched.";
+    showBanner(
+      "info",
+      `<div class="banner-row"><strong>A studio update is available</strong> (${info.behind} new commit${info.behind === 1 ? "" : "s"}).${note}
+       Run <code>${cmd}</code> in the studio folder, then restart.
+       <button class="linkish" type="button" data-copy="${cmd}">copy</button>
+       <button class="linkish" type="button" data-dismiss>dismiss</button></div>`
+    );
+  } catch {}
+}
+
 function hideBanner() {
   el.banner.hidden = true;
   el.banner.innerHTML = "";
@@ -3155,4 +3175,6 @@ function initSiteConnect() {
   } catch (err) {
     showBanner("error", `<strong>The studio could not reach its server.</strong> ${escapeHtml(err.message)}`);
   }
+
+  checkForUpdate();
 })();

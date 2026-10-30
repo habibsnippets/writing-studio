@@ -239,6 +239,32 @@ async function gitState() {
   }
 }
 
+/* Is the studio's own code behind its GitHub remote? Only meaningful for a
+   git clone; the writing lives in ignored folders, so pulling never touches
+   it. The result is cached so opening the studio doesn't hit the network
+   more than once every ten minutes. */
+let updateCache = { at: 0, value: null };
+
+async function updateState() {
+  if (updateCache.value && Date.now() - updateCache.at < 10 * 60 * 1000) return updateCache.value;
+  let value = { available: false };
+  try {
+    await run("git", ["rev-parse", "--is-inside-work-tree"], { cwd: APP_DIR });
+    const { stdout: top } = await run("git", ["rev-parse", "--show-toplevel"], { cwd: APP_DIR });
+    if (path.resolve(top.trim()) === path.resolve(APP_DIR)) {
+      await run("git", ["fetch", "--quiet"], { cwd: APP_DIR, timeout: 8000 });
+      const { stdout } = await run("git", ["rev-list", "--count", "HEAD..@{u}"], { cwd: APP_DIR });
+      const { stdout: dirty } = await run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: APP_DIR });
+      const behind = Number(stdout.trim()) || 0;
+      value = { available: behind > 0, behind, localEdits: dirty.trim().length > 0 };
+    }
+  } catch {
+    /* offline, no upstream, or not a clone: stay quiet */
+  }
+  updateCache = { at: Date.now(), value };
+  return value;
+}
+
 function gitCommand(message, branch) {
   const safe = message.replace(/["\\$`]/g, "");
   return `git add -A && git commit -m "${safe}" && git push origin ${branch || "main"}`;
@@ -591,6 +617,10 @@ async function api(req, res, url) {
   }
 
   /* --- Studio's own local content ------------------------- */
+
+  if (req.method === "GET" && route === "update") {
+    return send(res, 200, await updateState());
+  }
 
   if (req.method === "GET" && route === "posts") {
     const posts = await readPosts();
