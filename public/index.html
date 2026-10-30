@@ -42,10 +42,17 @@
         </svg>
         <span class="brand-word">writing<em>studio</em></span>
       </a>
-      <button class="btn btn-primary btn-new" id="newPost" type="button">
-        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-        New note
-      </button>
+      <div class="rail-head-actions">
+        <button class="btn btn-primary btn-new" id="newPost" type="button">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          New note
+        </button>
+        <button class="btn btn-import" id="importBtn" type="button" title="Import .md or .txt files — or drop them anywhere on the sidebar">
+          <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M8 11V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Import
+        </button>
+        <input type="file" id="importInput" accept=".md,.markdown,.mdx,.txt,.text,text/markdown,text/plain" multiple hidden>
+      </div>
     </div>
 
     <div class="rail-search">
@@ -843,6 +850,32 @@
     </div>
   </div>
 </div>
+
+<!-- Import files modal -->
+<div class="modal-backdrop" id="importModal" hidden>
+  <div class="modal note-modal" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+    <div class="modal-head">
+      <div class="modal-title-wrap">
+        <span class="modal-kicker">Bring writing in</span>
+        <h2 class="modal-title" id="importModalTitle">Import files</h2>
+      </div>
+      <button class="modal-close" id="importModalClose" type="button" aria-label="Close dialog">✕</button>
+    </div>
+    <div class="modal-body">
+      <ul class="import-files" id="importFiles"></ul>
+      <label class="site-field" for="importDest">Place in
+        <select id="importDest" class="site-input"></select>
+      </label>
+      <div class="site-error" id="importError" hidden></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" id="importModalCancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="importConfirm" type="button">Import</button>
+    </div>
+  </div>
+</div>
+
+<div class="drop-veil" id="dropVeil" hidden><div>Drop files to import</div></div>
 
 <!-- Private note / folder modal -->
 <div class="modal-backdrop" id="noteModal" hidden>

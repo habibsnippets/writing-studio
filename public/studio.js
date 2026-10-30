@@ -119,6 +119,16 @@ const el = {
   siteManageGenerator: $("siteManageGenerator"),
   siteManageUrl: $("siteManageUrl"),
   siteManageSections: $("siteManageSections"),
+  importBtn: $("importBtn"),
+  importInput: $("importInput"),
+  importModal: $("importModal"),
+  importModalClose: $("importModalClose"),
+  importModalCancel: $("importModalCancel"),
+  importConfirm: $("importConfirm"),
+  importFiles: $("importFiles"),
+  importDest: $("importDest"),
+  importError: $("importError"),
+  dropVeil: $("dropVeil"),
   noteModal: $("noteModal"),
   noteModalClose: $("noteModalClose"),
   noteModalTitle: $("noteModalTitle"),
@@ -359,7 +369,7 @@ const ICON = {
   trash: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.3 4.5V2.8h3.4v1.7M4.4 4.5l.6 9h6l.6-9M6.7 7v4M9.3 7v4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
-function groupHead(label, icon, actions = []) {
+function groupHead(label, icon, actions = [], drop = "") {
   const buttons = actions
     .map(
       ({ action, label: actionLabel, icon: actionIcon = ICON.plus }) => `
@@ -367,7 +377,7 @@ function groupHead(label, icon, actions = []) {
     )
     .join("");
   return `
-    <div class="group group-head">
+    <div class="group group-head"${drop ? ` data-drop="${escapeHtml(drop)}"` : ""}>
       <span class="group-name">${icon}${escapeHtml(label)}</span>
       ${buttons ? `<span class="group-actions">${buttons}</span>` : ""}
     </div>`;
@@ -446,7 +456,7 @@ function renderNoteTree(node, depth = 0, q = "") {
     const children = renderNoteTree(child, depth + 1, q);
     const count = countTreeNotes(child);
     html += `
-      <div class="tree-row folder-row" style="--depth:${depth}">
+      <div class="tree-row folder-row" style="--depth:${depth}" data-drop="note:${escapeHtml(child.path)}">
         <button class="tree-main" type="button" data-action="toggle-folder" data-folder="${escapeHtml(child.path)}" aria-expanded="${collapsed ? "false" : "true"}">
           ${ICON.chevron}
           ${ICON.folder}
@@ -502,7 +512,7 @@ function renderList() {
     groupHead(`Private notes · ${noteCount}`, ICON.lock, [
       { action: "new-note", label: "New private note", icon: ICON.notePlus },
       { action: "new-folder", label: "New private folder", icon: ICON.folderPlus },
-    ])
+    ], "note:")
   );
 
   const tree = buildNoteTree(state.notes?.folders || [], state.notes?.notes || []);
@@ -527,7 +537,7 @@ function renderList() {
   groups.push(
     groupHead(`Local blog · ${state.localPosts.length}`, ICON.pencil, [
       { action: "new-local-post", label: "New local blog post" },
-    ])
+    ], "local")
   );
   const local = [...state.localPosts].sort(
     (a, b) =>
@@ -559,7 +569,7 @@ function renderList() {
       /* An empty section still shows, so a new site's blog / notes /
          articles folders appear in the sidebar before the first post. */
       if (!matching.length && (q || posts.length)) continue;
-      siteHtml += `<div class="group group-sub">${escapeHtml(section.name)} · ${matching.length}</div>`;
+      siteHtml += `<div class="group group-sub" data-drop="site:${escapeHtml(section.id)}">${escapeHtml(section.name)} · ${matching.length}</div>`;
       siteHtml += matching.map((post) => renderSiteItem(post, "")).join("");
     }
     groups.push(siteHtml || `<p class="tree-empty">${q ? "No Pages writing matches." : "No writing found in the connected site."}</p>`);
@@ -2363,6 +2373,164 @@ async function createFolderFromModal() {
   }
 }
 
+/* --- Importing files ---------------------------------------- */
+
+const IMPORT_RE = /\.(?:md|markdown|mdx|txt|text)$/i;
+
+function importDestinations() {
+  const groups = [`<optgroup label="Private notes">${folderOptions("")}</optgroup>`.replace(/value="([^"]*)"/g, 'value="note:$1"')];
+  groups.push(`<optgroup label="Local blog"><option value="local">Local blog (as draft)</option></optgroup>`);
+  if (state.workspace) {
+    const sections = state.siteSections.length ? state.siteSections : state.workspace.sections || [];
+    if (sections.length) {
+      groups.push(
+        `<optgroup label="GitHub Pages · ${escapeHtml(state.workspace.repoName)}">${sections
+          .map((s) => `<option value="site:${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`)
+          .join("")}</optgroup>`
+      );
+    }
+  }
+  return groups.join("");
+}
+
+function importError(message = "") {
+  el.importError.textContent = message;
+  el.importError.hidden = !message;
+}
+
+function openImportModal(files, dest = "note:") {
+  const picked = Array.from(files || []);
+  if (!picked.length) return;
+  state.importFiles = picked;
+  el.importFiles.innerHTML = picked
+    .map((f) => `<li class="${IMPORT_RE.test(f.name) ? "" : "is-bad"}">${escapeHtml(f.name)}${IMPORT_RE.test(f.name) ? "" : " — unsupported type"}</li>`)
+    .join("");
+  el.importDest.innerHTML = importDestinations();
+  el.importDest.value = [...el.importDest.options].some((o) => o.value === dest) ? dest : "note:";
+  importError("");
+  el.importConfirm.disabled = false;
+  el.importModal.hidden = false;
+}
+
+function closeImportModal() {
+  el.importModal.hidden = true;
+  state.importFiles = [];
+}
+
+async function importFiles(files, dest) {
+  const [kind, target = ""] = String(dest).split(/:(.*)/s);
+  const results = [];
+  const failures = [];
+  for (const file of files) {
+    if (!IMPORT_RE.test(file.name)) {
+      failures.push(`${file.name}: unsupported type`);
+      continue;
+    }
+    const params = new URLSearchParams({ kind });
+    if (kind === "note") params.set("folder", target);
+    if (kind === "site") params.set("section", target);
+    try {
+      results.push(
+        await api(`/api/import?${params}`, {
+          method: "POST",
+          headers: { "x-filename": encodeURIComponent(file.name), "content-type": "application/octet-stream" },
+          body: await file.arrayBuffer(),
+        })
+      );
+    } catch (err) {
+      failures.push(`${file.name}: ${err.message}`);
+    }
+  }
+  if (kind === "note" && target && results.length) {
+    state.collapsedFolders.delete(target);
+    persistCollapsed();
+  }
+  if (results.length) await refreshList();
+  return { results, failures };
+}
+
+async function runImport(files, dest) {
+  const { results, failures } = await importFiles(files, dest);
+  if (results.length === 1 && !failures.length) {
+    const only = results[0];
+    await openPost(only.id, only.kind === "note" ? "note" : only.kind);
+  }
+  if (results.length) toast(`Imported ${results.length} file${results.length === 1 ? "" : "s"}`);
+  return failures;
+}
+
+async function confirmImport() {
+  el.importConfirm.disabled = true;
+  importError("");
+  const failures = await runImport(state.importFiles, el.importDest.value);
+  if (failures.length) {
+    importError(failures.join("\n"));
+    el.importConfirm.disabled = false;
+    return;
+  }
+  closeImportModal();
+}
+
+function initImport() {
+  el.importBtn.addEventListener("click", () => el.importInput.click());
+  el.importInput.addEventListener("change", () => {
+    const files = el.importInput.files;
+    openImportModal(files);
+    el.importInput.value = "";
+  });
+  el.importModalClose.addEventListener("click", closeImportModal);
+  el.importModalCancel.addEventListener("click", closeImportModal);
+  el.importConfirm.addEventListener("click", confirmImport);
+
+  const hasFiles = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
+  let dragDepth = 0;
+  let hot = null;
+  const setHot = (node) => {
+    if (hot === node) return;
+    hot?.classList.remove("drop-hot");
+    hot = node;
+    hot?.classList.add("drop-hot");
+  };
+  const inEditor = (event) => event.target instanceof Element && event.target.closest("#editor");
+
+  window.addEventListener("dragenter", (event) => {
+    if (!hasFiles(event) || inEditor(event)) return;
+    dragDepth++;
+    el.dropVeil.hidden = false;
+  });
+  window.addEventListener("dragleave", (event) => {
+    if (!hasFiles(event)) return;
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) {
+      el.dropVeil.hidden = true;
+      setHot(null);
+    }
+  });
+  window.addEventListener("dragover", (event) => {
+    if (!hasFiles(event) || inEditor(event)) return;
+    event.preventDefault();
+    const target = event.target instanceof Element ? event.target.closest("[data-drop]") : null;
+    setHot(target);
+    el.dropVeil.classList.toggle("is-targeted", !!target);
+  });
+  window.addEventListener("drop", async (event) => {
+    if (!hasFiles(event) || inEditor(event)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    el.dropVeil.hidden = true;
+    const target = event.target instanceof Element ? event.target.closest("[data-drop]") : null;
+    setHot(null);
+    const files = Array.from(event.dataTransfer.files);
+    if (!files.length) return;
+    if (target) {
+      const failures = await runImport(files, target.dataset.drop);
+      if (failures.length) toast(failures[0]);
+    } else {
+      openImportModal(files);
+    }
+  });
+}
+
 function initNoteModal() {
   el.noteModalClose.addEventListener("click", closeNoteModal);
   el.noteModalCancel.addEventListener("click", closeNoteModal);
@@ -2959,6 +3127,7 @@ function initSiteConnect() {
   initAiSettings();
   initSiteConnect();
   initNoteModal();
+  initImport();
   try {
     setRail(localStorage.getItem(RAIL_KEY) !== "1", { persist: false });
   } catch {

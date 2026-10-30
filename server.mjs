@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { renderMarkdown, readingMinutes, countHtmlWords, rewriteHtmlAssets, htmlFragment } from "./lib/md.mjs";
 import { page } from "./lib/post-page.mjs";
+import { normalizeDate } from "./lib/frontmatter.mjs";
 import { buildSite } from "./lib/builder.mjs";
 import { scanSite, inspectFolder } from "./lib/site-scanner.mjs";
 import {
@@ -37,6 +38,8 @@ import {
   listNotes,
   getNote,
   createNote,
+  importNote,
+  parseImport,
   saveNote,
   deleteNote,
   createFolder,
@@ -544,6 +547,44 @@ async function api(req, res, url) {
       const filename = decodeURIComponent(req.headers["x-filename"] || "image.png");
       const bytes = await body(req, 25 * 1024 * 1024);
       return send(res, 200, await uploadNoteAsset(notePath, filename, bytes));
+    } catch (err) {
+      return send(res, err.code || 500, { error: err.message });
+    }
+  }
+
+  /* Import a text file the user picked or dropped. The target says
+     where it lands: a private folder, the local blog, or a Pages section. */
+  if (req.method === "POST" && route === "import") {
+    try {
+      const filename = decodeURIComponent(req.headers["x-filename"] || "");
+      const kind = url.searchParams.get("kind") || "note";
+      const bytes = await body(req, 10 * 1024 * 1024);
+      const text = bytes.toString("utf8");
+
+      if (kind === "note") {
+        const note = await importNote({ folder: url.searchParams.get("folder") || "", filename, text });
+        return send(res, 200, { kind, id: note.meta.path, title: note.meta.title });
+      }
+
+      const { title, body: content, slug, parsed } = parseImport(filename, text);
+      const dateISO = normalizeDate(parsed.data?.date) || undefined;
+      if (kind === "local") {
+        const posts = await readPosts();
+        let unique = slug;
+        for (let n = 2; posts.some((p) => p.slug === unique) || (await bodyPath(unique)); n++) unique = `${slug}-${n}`;
+        const saved = await savePost({ slug: unique, title, dateISO, description: parsed.data?.description, draft: true }, content);
+        return send(res, 200, { kind, id: saved.slug, title: saved.title });
+      }
+      if (kind === "site") {
+        const workspace = await readWorkspace();
+        const saved = await saveSitePost(
+          workspace,
+          { sectionId: url.searchParams.get("section") || "", slug, title, dateISO, description: parsed.data?.description },
+          content
+        );
+        return send(res, 200, { kind, id: saved.id, title: saved.title });
+      }
+      return send(res, 400, { error: "Unknown import destination" });
     } catch (err) {
       return send(res, err.code || 500, { error: err.message });
     }
