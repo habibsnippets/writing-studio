@@ -57,6 +57,8 @@ const el = {
   paneHint: $("paneHint"),
   focusModeBtn: $("focusModeBtn"),
   focusModeLabel: $("focusModeLabel"),
+  previewFocusBtn: $("previewFocusBtn"),
+  previewFocusLabel: $("previewFocusLabel"),
   writeSurface: $("writeSurface"),
   drawSurface: $("drawSurface"),
   toolbar: $("toolbar"),
@@ -181,6 +183,8 @@ const state = {
   previewStale: false,
   railOn: true,
   focusOn: false,
+  previewFocusOn: false,
+  previewFocusReturn: null, // { railOn } captured when preview fullscreen starts
   focusReturn: null, // { railOn, previewOn } captured when focus mode starts
   mode: "write", // write | draw | split
   words: 0,
@@ -1776,6 +1780,7 @@ function setPreview(on, { render = true } = {}) {
   /* Preview belongs to the normal workspace layout. Asking for it while
      focused exits fullscreen and restores the saved rail/preview state. */
   if (on && state.focusOn) exitFocusMode();
+  if (!on && state.previewFocusOn) exitPreviewFocus();
 
   /* Splitting only makes sense with the preview out of the way; opening
      the preview collapses back to the editor. */
@@ -1860,6 +1865,41 @@ el.focusModeBtn.addEventListener("click", () => {
   state.focusOn ? exitFocusMode() : enterFocusMode();
 });
 
+/* Preview fullscreen: the same chrome-free layout, but the rendered
+   preview fills the screen instead of the editor. */
+function syncPreviewFocusChrome() {
+  const on = state.previewFocusOn;
+  el.previewFocusBtn.setAttribute("aria-pressed", String(on));
+  el.previewFocusBtn.setAttribute("aria-label", on ? "Exit fullscreen preview" : "Enter fullscreen preview");
+  el.previewFocusBtn.title = on
+    ? "Exit fullscreen"
+    : "Fullscreen — hide the sidebar, editor and top bar";
+  el.previewFocusLabel.textContent = on ? "Exit full" : "Fullscreen";
+}
+
+function enterPreviewFocus() {
+  if (state.previewFocusOn || !state.previewOn) return;
+  state.previewFocusReturn = { railOn: state.railOn };
+  state.previewFocusOn = true;
+  setRail(false, { persist: false });
+  el.app.classList.add("preview-focus");
+  syncPreviewFocusChrome();
+}
+
+function exitPreviewFocus() {
+  if (!state.previewFocusOn) return;
+  const saved = state.previewFocusReturn;
+  state.previewFocusOn = false;
+  state.previewFocusReturn = null;
+  el.app.classList.remove("preview-focus");
+  syncPreviewFocusChrome();
+  if (saved) setRail(saved.railOn, { persist: false });
+}
+
+el.previewFocusBtn.addEventListener("click", () => {
+  state.previewFocusOn ? exitPreviewFocus() : enterPreviewFocus();
+});
+
 window.addEventListener("resize", () => {
   if (state.mode === "split" && window.innerWidth <= 760) setMode("write");
 });
@@ -1886,6 +1926,7 @@ document.addEventListener("keydown", (event) => {
   }
   if (event.key === "Escape") {
     closeMenu();
+    if (state.previewFocusOn && el.noteModal.hidden && el.sectionModal.hidden) exitPreviewFocus();
     if (!el.noteModal.hidden) closeNoteModal();
     else if (!el.sectionModal.hidden) closeSectionPicker();
     else if (!el.siteModal.hidden) closeSiteModal();

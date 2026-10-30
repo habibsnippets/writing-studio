@@ -2129,30 +2129,42 @@ select.site-input {
 
 /* The pane header and each surface's own toolbar stay visible; the
    surrounding chrome gives its space to the editor or canvas. */
-.app.focus-mode {
+.app.focus-mode,
+.app.preview-focus {
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 }
-.app.focus-mode .rail { display: none; }
+.app.focus-mode .rail,
+.app.preview-focus .rail { display: none; }
 
 .app.focus-mode .topbar,
 .app.focus-mode .scope-strip,
 .app.focus-mode .meta-row,
-.app.focus-mode .banner { display: none !important; }
+.app.focus-mode .banner,
+.app.preview-focus .topbar,
+.app.preview-focus .scope-strip,
+.app.preview-focus .meta-row,
+.app.preview-focus .banner { display: none !important; }
 
-.app.focus-mode .panes {
+.app.focus-mode .panes,
+.app.preview-focus .panes {
   padding: 0;
   gap: 0;
 }
-.app.focus-mode .pane {
+.app.preview-focus .panes { grid-template-columns: minmax(0, 1fr); }
+.app.preview-focus .write { display: none !important; }
+.app.focus-mode .pane,
+.app.preview-focus .pane {
   border: 0;
   border-radius: 0;
   box-shadow: none;
 }
 
 @media (max-width: 900px) {
-  .app.focus-mode { grid-template-rows: minmax(0, 1fr); }
-  .app.focus-mode .panes { padding: 0; }
+  .app.focus-mode,
+  .app.preview-focus { grid-template-rows: minmax(0, 1fr); }
+  .app.focus-mode .panes,
+  .app.preview-focus .panes { padding: 0; }
 }
 
 @media (max-width: 560px) {
