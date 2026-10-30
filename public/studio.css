@@ -200,11 +200,11 @@ button { cursor: pointer; }
 .brand-mark:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; }
 .brand-glyph {
   flex: none;
-  width: 27px;
+  width: 20px;
   height: 27px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 3.4;
+  stroke-width: 5.4;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
