@@ -2205,7 +2205,7 @@ function initAiSettings() {
   if (keyVisBtn) {
     keyVisBtn.addEventListener("click", () => {
       const input = $("aiApiKey");
-      if (input) input.type = input.type === "password" ? "text" : "password";
+      if (input) input.classList.toggle("is-masked");
     });
   }
 

@@ -97,6 +97,13 @@ try {
   pdfjsDistDir = (await access(local).then(() => true, () => false)) ? local : parent;
 }
 
+let katexDistDir = null;
+try {
+  katexDistDir = path.join(path.dirname(require.resolve("katex/package.json", { paths: [APP_DIR, path.resolve(APP_DIR, "..")] })), "dist");
+} catch {
+  katexDistDir = path.join(APP_DIR, "node_modules/katex/dist");
+}
+
 /* --- Helpers ---------------------------------------------- */
 
 /* CON, NUL and friends are filenames on Windows, not files. */
@@ -911,6 +918,13 @@ async function api(req, res, url) {
     }
   }
 
+  /* Markdown + maths -> safe HTML, used to turn pasted equations into canvas images */
+  if (route === "ai/render" && req.method === "POST") {
+    const { text = "" } = await json(req);
+    const out = renderMarkdown(String(text).slice(0, 20000), { escapeHtml: true, assetBase: "" });
+    return send(res, 200, { ok: true, html: out.html });
+  }
+
   if (route === "ai/explain" && req.method === "POST") {
     try {
       const payload = await json(req);
@@ -928,7 +942,9 @@ async function api(req, res, url) {
         if (!rejectedImage) throw err;
         result = await callAiProvider({ ...payload, imageBase64: null });
       }
-      return send(res, 200, { ok: true, explanation: result.explanation, model: result.model });
+      /* Rendered here so $…$ maths becomes real KaTeX markup, not raw dollars */
+      const html = renderMarkdown(String(result.explanation || ""), { escapeHtml: true, assetBase: "" }).html;
+      return send(res, 200, { ok: true, explanation: result.explanation, html, model: result.model });
     } catch (err) {
       return send(res, 400, { ok: false, error: err.message });
     }
@@ -1165,6 +1181,14 @@ async function serveStatic(res, url) {
     const sub = pathname.replace(/^\/node_modules\/pdfjs-dist\//, "");
     const target = path.resolve(pdfjsDistDir, sub);
     if (!target.startsWith(pdfjsDistDir)) return send(res, 403, { error: "Access denied" });
+    return serveFile(res, target);
+  }
+
+  // 3b. KaTeX stylesheet + fonts (AI answers and pasted equations)
+  if (pathname.startsWith("/vendor/katex/")) {
+    const sub = pathname.replace(/^\/vendor\/katex\//, "");
+    const target = path.resolve(katexDistDir, sub);
+    if (!target.startsWith(katexDistDir)) return send(res, 403, { error: "Access denied" });
     return serveFile(res, target);
   }
 

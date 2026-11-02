@@ -2234,3 +2234,6 @@ select.site-input {
   font-weight: 600;
 }
 .drop-veil.is-targeted > div { opacity: 0; }
+
+/* API key looks like a password but is a text field, so Chrome never offers to save it */
+.ai-input.is-masked { -webkit-text-security: disc; text-security: disc; }

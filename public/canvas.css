@@ -935,3 +935,12 @@
   padding: 0 9px;
   font-size: 10.5px;
 }
+
+/* AI answers are rendered markdown (with KaTeX maths) */
+.ai-answer-content > :first-child { margin-top: 0; }
+.ai-answer-content > :last-child { margin-bottom: 0; }
+.ai-answer-content p { margin: 0 0 0.7em; }
+.ai-answer-content ul, .ai-answer-content ol { margin: 0 0 0.7em; padding-left: 1.3em; }
+.ai-answer-content pre { overflow-x: auto; }
+.ai-answer-content .math-block { overflow-x: auto; margin: 0.6em 0; }
+.ai-answer-content h1, .ai-answer-content h2, .ai-answer-content h3, .ai-answer-content h4 { font-size: 1em; margin: 0.8em 0 0.4em; }

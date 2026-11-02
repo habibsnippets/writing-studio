@@ -6,6 +6,9 @@ content/
 data/
 dist/
 
+# The engineering masterclass is personal study material, not for publishing.
+docs/engineering-guide.md
+
 # First-run starter content (safe to publish). Keep this exception even though
 # the live content/ folder above is ignored.
 !content.example/

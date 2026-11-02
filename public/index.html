@@ -23,6 +23,7 @@
 <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="preload" href="/fonts/Virgil.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/vendor/katex/katex.min.css">
 <link rel="stylesheet" href="/studio.css">
 <link rel="stylesheet" href="/canvas.css">
 </head>
@@ -642,7 +643,7 @@
         <div class="ai-field">
           <label for="aiApiKey">API Key</label>
           <div class="input-with-action">
-            <input id="aiApiKey" class="ai-input" type="password" placeholder="Paste your API key here…" autocomplete="off" spellcheck="false">
+            <input id="aiApiKey" class="ai-input is-masked" type="text" name="ai-key-field" placeholder="Paste your API key here…" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other">
             <button class="ai-key-vis-btn" id="aiToggleKeyVis" type="button" title="Show/hide key">👁</button>
           </div>
           <span class="field-hint" id="aiKeyHint">

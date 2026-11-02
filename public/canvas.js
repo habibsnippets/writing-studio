@@ -1010,6 +1010,116 @@ export function mountCanvas(opts = {}) {
     notify(`Image added · ${naturalW} × ${naturalH}`);
   }
 
+  /* --- pasted equations -------------------------------------- */
+
+  const MATH_RE = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?:^|[^\\$])\$(?![\s$])[^\n$]+?(?<![\s\\])\$(?![\d$])/;
+  let katexCssPromise = null;
+
+  /* KaTeX's stylesheet with its fonts inlined, so an SVG image can use it. */
+  function katexInlineCss() {
+    katexCssPromise ||= (async () => {
+      const base = "/vendor/katex/";
+      let css = await (await fetch(`${base}katex.min.css`)).text();
+      const names = [...new Set([...css.matchAll(/url\(fonts\/([^)]+?\.woff2)\)/g)].map((m) => m[1]))];
+      const fonts = new Map();
+      await Promise.all(names.map(async (name) => {
+        const buf = new Uint8Array(await (await fetch(`${base}fonts/${name}`)).arrayBuffer());
+        let bin = "";
+        for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+        fonts.set(name, `data:font/woff2;base64,${btoa(bin)}`);
+      }));
+      css = css.replace(
+        /src:url\(fonts\/([^)]+?\.woff2)\) format\("woff2"\)[^}]*/g,
+        (_, name) => `src:url(${fonts.get(name)}) format("woff2")`
+      );
+      return css;
+    })().catch((err) => {
+      katexCssPromise = null;
+      throw err;
+    });
+    return katexCssPromise;
+  }
+
+  /* Render text containing $…$ maths to a crisp bitmap: markdown -> KaTeX
+     HTML (server) -> SVG foreignObject -> PNG. */
+  async function mathTextToImage(text, color) {
+    const res = await fetch("/api/ai/render", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || "Could not render the equation");
+    const css = await katexInlineCss();
+
+    const box = document.createElement("div");
+    box.className = "math-paste-box";
+    box.style.cssText =
+      "position:fixed;left:-10000px;top:0;display:inline-block;max-width:520px;padding:6px 8px;" +
+      "font:18px/1.5 system-ui,sans-serif;visibility:hidden;";
+    box.innerHTML = data.html;
+    box.querySelectorAll("p,ul,ol").forEach((n) => (n.style.margin = "0 0 0.5em"));
+    box.querySelectorAll(".math-block,.katex-display").forEach((n) => (n.style.margin = "0.3em 0"));
+    document.body.appendChild(box);
+    await document.fonts.ready;
+    const w = Math.ceil(box.offsetWidth);
+    const h = Math.ceil(box.offsetHeight);
+    box.style.visibility = "visible";
+    box.style.color = color;
+    const markup = new XMLSerializer().serializeToString(box);
+    box.remove();
+
+    const scale = 2;
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}" viewBox="0 0 ${w} ${h}">` +
+      `<foreignObject x="0" y="0" width="${w}" height="${h}"><style>${css}</style>${markup}</foreignObject></svg>`;
+    const img = new Image();
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    await img.decode();
+
+    const out = document.createElement("canvas");
+    out.width = w * scale;
+    out.height = h * scale;
+    const g = out.getContext("2d");
+    g.drawImage(img, 0, 0);
+    /* inlined fonts can finish decoding just after the first paint */
+    await new Promise((r) => setTimeout(r, 80));
+    g.clearRect(0, 0, out.width, out.height);
+    g.drawImage(img, 0, 0);
+    return { src: out.toDataURL("image/png"), naturalW: w, naturalH: h };
+  }
+
+  async function pasteMathText(text) {
+    try {
+      notify("Rendering equation…");
+      const { src, naturalW, naturalH } = await mathTextToImage(text, state.style?.stroke || "#1e1e1e");
+      addImage(src, naturalW, naturalH);
+      notify("Equation added to the canvas");
+    } catch (err) {
+      notify(err.message || "Could not render the equation");
+    }
+  }
+
+  /* Copying from the AI answer yields the LaTeX source ($…$), not KaTeX glyphs. */
+  function onAiAnswerCopy(event) {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    const holder = document.createElement("div");
+    holder.style.cssText = "position:fixed;left:-10000px;top:0;white-space:pre-wrap;";
+    for (let i = 0; i < sel.rangeCount; i++) holder.appendChild(sel.getRangeAt(i).cloneContents());
+    holder.querySelectorAll(".katex").forEach((node) => {
+      const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
+      if (tex == null) return;
+      const block = node.closest(".katex-display, .math-block");
+      node.replaceWith(document.createTextNode(block ? `$$${tex}$$` : `$${tex}$`));
+    });
+    document.body.appendChild(holder);
+    const text = holder.innerText;
+    holder.remove();
+    event.clipboardData.setData("text/plain", text);
+    event.preventDefault();
+  }
+
   async function insertImageFile(file, at = null) {
     try {
       const { src, naturalW, naturalH } = await readClipboardImage(file);
@@ -3569,7 +3679,7 @@ export function mountCanvas(opts = {}) {
 
       const answerDiv = document.createElement("div");
       answerDiv.className = "ai-answer-content";
-      answerDiv.innerHTML = formatAiMarkdown(data.explanation);
+      answerDiv.innerHTML = data.html || formatAiMarkdown(data.explanation);
       el.aiCardResponse.appendChild(answerDiv);
       el.aiCardResponse.scrollTop = el.aiCardResponse.scrollHeight;
     } catch (err) {
@@ -4183,6 +4293,12 @@ export function mountCanvas(opts = {}) {
       return;
     }
 
+    if (text && MATH_RE.test(text)) {
+      event.preventDefault();
+      pasteMathText(text);
+      return;
+    }
+
     if (state.clipboard.length) {
       event.preventDefault();
       pasteClipboard();
@@ -4605,6 +4721,7 @@ export function mountCanvas(opts = {}) {
     stage.addEventListener("dragleave", onDragLeave);
     stage.addEventListener("drop", onDrop);
     document.addEventListener("paste", onPaste);
+    el.aiCardResponse?.addEventListener("copy", onAiAnswerCopy);
 
     el.textEditor.addEventListener("blur", commitText);
     el.textEditor.addEventListener("input", autoGrowText);
