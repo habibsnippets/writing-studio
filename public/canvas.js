@@ -651,8 +651,13 @@ function handlesFor(el) {
     return absPoints(el).map((point, i) => ({ name: `p${i}`, x: point.x, y: point.y }));
   }
   if (el.type === "text") {
-    /* No resize handles: the words decide how wide the text is. */
-    return [];
+    /* Corner handles scale the text: dragging changes its font size. */
+    return [
+      { name: "nw", x: b.x, y: b.y },
+      { name: "ne", x: b.x + b.w, y: b.y },
+      { name: "se", x: b.x + b.w, y: b.y + b.h },
+      { name: "sw", x: b.x, y: b.y + b.h },
+    ];
   }
   return [
     { name: "nw", x: b.x, y: b.y },
@@ -2206,7 +2211,8 @@ export function mountCanvas(opts = {}) {
 
   function drawRichText(g, item) {
     const entry = richCache.get(item.id);
-    if (!entry || entry.key !== richKey(item)) ensureRichRender(item);
+    const resizing = state.action?.kind === "resize" && state.action.item === item;
+    if ((!entry || entry.key !== richKey(item)) && !resizing) ensureRichRender(item);
     /* Keep showing the previous bitmap until the new one is ready. */
     if (!entry?.img || !entry.img.complete || !entry.img.naturalWidth) return;
     g.imageSmoothingEnabled = true;
@@ -2847,7 +2853,10 @@ export function mountCanvas(opts = {}) {
         item.w = a.start.w;
         item.h = a.start.h;
         if (a.points) item.points = a.points.map((p) => ({ ...p }));
-        if (item.type === "text") refreshTextSize(item);
+        if (item.type === "text") {
+          if (a.start.fontSize) item.fontSize = a.start.fontSize;
+          refreshTextSize(item);
+        }
       }
     } else if (a?.kind === "pan") {
       state.view = { ...a.view };
@@ -2933,7 +2942,7 @@ export function mountCanvas(opts = {}) {
       kind: "resize",
       item,
       handle,
-      start: { x: item.x, y: item.y, w: item.w, h: item.h },
+      start: { x: item.x, y: item.y, w: item.w, h: item.h, fontSize: item.fontSize },
       points: item.points ? item.points.map((p) => ({ ...p })) : null,
       moved: false,
     };
@@ -2981,13 +2990,24 @@ export function mountCanvas(opts = {}) {
     }
 
     if (item.type === "text") {
-      let left = b.x;
-      let right = b.x + b.w;
-      if (a.handle === "w") left = Math.min(p.x, right - 60);
-      else right = Math.max(p.x, left + 60);
-      item.x = left;
-      item.w = right - left;
-      refreshTextSize(item);
+      /* Scale from the opposite corner, which stays put. */
+      const ox = a.handle.includes("w") ? b.x + b.w : b.x;
+      const oy = a.handle.includes("n") ? b.y + b.h : b.y;
+      const raw = Math.max(Math.abs(p.x - ox) / Math.max(1, b.w), Math.abs(p.y - oy) / Math.max(1, b.h));
+      const startSize = b.fontSize || item.fontSize;
+      const size = clamp(Math.round(startSize * raw * 10) / 10, 8, 400);
+      const scale = size / startSize;
+      item.fontSize = size;
+      if (item.rich) {
+        /* The bitmap is stretched while dragging and re-rendered crisply
+           at the new size on release. */
+        item.w = b.w * scale;
+        item.h = b.h * scale;
+      } else {
+        refreshTextSize(item);
+      }
+      item.x = a.handle.includes("w") ? ox - item.w : ox;
+      item.y = a.handle.includes("n") ? oy - item.h : oy;
       a.moved = true;
       render();
       return;
@@ -4285,6 +4305,7 @@ export function mountCanvas(opts = {}) {
       commitHistory();
       scheduleSave();
       syncStyleUI();
+      if (a.kind === "resize" && a.item.type === "text") render();
     } else if (a?.kind === "marquee") {
       finishMarquee(a);
     } else if (a?.kind === "ai-select") {
