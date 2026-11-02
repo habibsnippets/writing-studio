@@ -1021,6 +1021,7 @@ export function mountCanvas(opts = {}) {
      the selection contained no maths at all. */
   const DRAW_PASTE_MARK = "writing-studio-draw";
   let lastDrawCopy = "";
+  const normalizeClip = (t) => String(t || "").replace(/\s+/g, " ").trim();
   let katexCssPromise = null;
 
   /* KaTeX's stylesheet with its fonts inlined, so an SVG image can use it. */
@@ -1072,6 +1073,11 @@ export function mountCanvas(opts = {}) {
     await document.fonts.ready;
     const w = Math.ceil(box.offsetWidth);
     const h = Math.ceil(box.offsetHeight);
+    /* The off-screen parking position must not travel into the SVG, or the
+       content is drawn outside the image and the result is blank. */
+    box.style.position = "static";
+    box.style.left = "";
+    box.style.top = "";
     box.style.visibility = "visible";
     box.style.color = color;
     const markup = new XMLSerializer().serializeToString(box);
@@ -1108,23 +1114,11 @@ export function mountCanvas(opts = {}) {
     }
   }
 
-  /* Copying from the AI answer yields the LaTeX source ($…$), not KaTeX glyphs. */
+  /* Ctrl+C in the AI answer yields markdown ($…$ maths, **bold**, headings). */
   function onAiAnswerCopy(event) {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-    const holder = document.createElement("div");
-    holder.style.cssText = "position:fixed;left:-10000px;top:0;white-space:pre-wrap;";
-    for (let i = 0; i < sel.rangeCount; i++) holder.appendChild(sel.getRangeAt(i).cloneContents());
-    holder.querySelectorAll(".katex").forEach((node) => {
-      const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
-      if (tex == null) return;
-      const block = node.closest(".katex-display, .math-block");
-      node.replaceWith(document.createTextNode(block ? `$$${tex}$$` : `$${tex}$`));
-    });
-    document.body.appendChild(holder);
-    const text = holder.innerText;
-    holder.remove();
-    event.clipboardData.setData("text/plain", text);
+    const md = aiSelectionMarkdown();
+    if (!md) return;
+    event.clipboardData.setData("text/plain", md);
     event.preventDefault();
   }
 
@@ -3796,8 +3790,24 @@ export function mountCanvas(opts = {}) {
     if (!inside) return null;
 
     const holder = document.createElement("div");
-    for (let i = 0; i < sel.rangeCount; i++) holder.appendChild(sel.getRangeAt(i).cloneContents());
+    for (let i = 0; i < sel.rangeCount; i++) holder.appendChild(wholeMathRange(sel.getRangeAt(i)).cloneContents());
     return holder;
+  }
+
+  /* A selection that starts or ends inside a rendered equation would clone
+     only half of it (often without its LaTeX annotation), so widen the range
+     to take the whole equation. */
+  function wholeMathRange(range) {
+    const r = range.cloneRange();
+    const outer = (node) => {
+      const start = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+      return start?.closest(".math-block, .katex-display") || start?.closest(".katex") || null;
+    };
+    const a = outer(range.startContainer);
+    const b = outer(range.endContainer);
+    if (a) r.setStartBefore(a);
+    if (b) r.setEndAfter(b);
+    return r;
   }
 
   function aiSelectionMarkdown() {
@@ -4355,6 +4365,14 @@ export function mountCanvas(opts = {}) {
     const mod = event.metaKey || event.ctrlKey;
     const key = event.key.toLowerCase();
 
+    /* Text selected inside the AI answer: leave Ctrl+C / Ctrl+A to the
+       browser so the answer's own copy handler runs, not the canvas's. */
+    if (mod && (key === "c" || key === "a") && el.aiExplainCard && !el.aiExplainCard.hidden) {
+      const sel = window.getSelection();
+      const anchor = sel?.anchorNode;
+      if (sel && !sel.isCollapsed && anchor && el.aiExplainCard.contains(anchor.nodeType === 1 ? anchor : anchor.parentElement)) return;
+    }
+
     if (typing) {
       if (!mod && event.shiftKey && key === "h") {
         event.preventDefault();
@@ -4495,7 +4513,7 @@ export function mountCanvas(opts = {}) {
        image) instead of pasting the markdown syntax. */
     const plain = event.clipboardData?.getData("text/plain")?.trim();
     const html = event.clipboardData?.getData("text/html") || "";
-    if (plain && (html.includes(DRAW_PASTE_MARK) || plain === lastDrawCopy.trim())) {
+    if (plain && (html.includes(DRAW_PASTE_MARK) || normalizeClip(plain) === normalizeClip(lastDrawCopy))) {
       event.preventDefault();
       pasteMathText(plain);
       return;
