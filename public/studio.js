@@ -2057,10 +2057,37 @@ function getAiConfig() {
         cfg.model = "gemini-3.8-flash";
         saveAiConfig(cfg);
       }
+      /* Keys and base URLs are kept per provider so one provider's key is
+         never shown under another. Older saves held a single key, which
+         belonged to whichever provider was active at the time. */
+      if (!cfg.keys || typeof cfg.keys !== "object") {
+        cfg.keys = cfg.apiKey ? { [cfg.provider]: cfg.apiKey } : {};
+      }
+      if (!cfg.baseUrls || typeof cfg.baseUrls !== "object") {
+        cfg.baseUrls = cfg.baseUrl ? { [cfg.provider]: cfg.baseUrl } : {};
+      }
+      cfg.apiKey = cfg.keys[cfg.provider] || "";
+      cfg.baseUrl = cfg.baseUrls[cfg.provider] || "";
       return cfg;
     }
   } catch {}
-  return { provider: "google", apiKey: "", model: "gemini-3.8-flash", baseUrl: "" };
+  return { provider: "google", apiKey: "", model: "gemini-3.8-flash", baseUrl: "", keys: {}, baseUrls: {} };
+}
+
+/* Unsaved edits per provider while the settings modal is open. */
+let aiDraft = { keys: {}, baseUrls: {}, provider: "google" };
+
+function stashAiDraft() {
+  aiDraft.keys[aiDraft.provider] = $("aiApiKey")?.value?.trim() || "";
+  aiDraft.baseUrls[aiDraft.provider] = $("aiBaseUrl")?.value?.trim() || "";
+}
+
+function showAiDraft(provider) {
+  aiDraft.provider = provider;
+  const keyInput = $("aiApiKey");
+  if (keyInput) keyInput.value = aiDraft.keys[provider] || "";
+  const baseUrlInput = $("aiBaseUrl");
+  if (baseUrlInput) baseUrlInput.value = aiDraft.baseUrls[provider] || "";
 }
 
 function saveAiConfig(cfg) {
@@ -2098,11 +2125,8 @@ function openAiModal() {
 
   updateModelOptions(cfg.provider, cfg.model);
 
-  const keyInput = $("aiApiKey");
-  if (keyInput) keyInput.value = cfg.apiKey || "";
-
-  const baseUrlInput = $("aiBaseUrl");
-  if (baseUrlInput) baseUrlInput.value = cfg.baseUrl || "";
+  aiDraft = { keys: { ...cfg.keys }, baseUrls: { ...cfg.baseUrls }, provider: cfg.provider };
+  showAiDraft(cfg.provider);
 
   const resultBox = $("aiTestResult");
   if (resultBox) {
@@ -2198,6 +2222,8 @@ function initAiSettings() {
       const provider = card.dataset.provider;
       const radio = card.querySelector('input[type="radio"]');
       if (radio) radio.checked = true;
+      stashAiDraft();
+      showAiDraft(provider);
       updateModelOptions(provider);
     });
   });
@@ -2266,10 +2292,13 @@ function initAiSettings() {
     saveBtn.addEventListener("click", () => {
       const provider = document.querySelector('input[name="aiProvider"]:checked')?.value || "google";
       const model = getSelectedAiModel();
-      const apiKey = $("aiApiKey")?.value?.trim() || "";
-      const baseUrl = $("aiBaseUrl")?.value?.trim() || "";
+      stashAiDraft();
+      const keys = { ...aiDraft.keys };
+      const baseUrls = { ...aiDraft.baseUrls };
+      const apiKey = keys[provider] || "";
+      const baseUrl = baseUrls[provider] || "";
 
-      saveAiConfig({ provider, model, apiKey, baseUrl });
+      saveAiConfig({ provider, model, apiKey, baseUrl, keys, baseUrls });
       toast(apiKey ? `AI configured with ${AI_PROVIDERS[provider]?.name || provider} (${model})` : "AI settings updated");
       closeAiModal();
     });

@@ -2385,7 +2385,7 @@ export function mountCanvas(opts = {}) {
     } else if (state.tool === "pen") {
       text = "Drag to draw freehand · V to select · Esc to finish";
     } else if (state.tool === "highlight") {
-      text = "Drag over the page to highlight · pick a colour above · V to select";
+      text = "Drag over the page to highlight in a straight line (hold Alt for freehand) · pick a colour above · V to select";
     } else if (state.tool === "arrow" || state.tool === "line") {
       text = "Drag between shapes · ends snap to edges · Path \"elbow\" for right-angle flowcharts · Shift locks 45°";
     } else if (state.tool === "hand") {
@@ -2629,6 +2629,14 @@ export function mountCanvas(opts = {}) {
     if (!a || !state.draft) return;
     const item = state.draft;
     const start = a.start;
+
+    if (item.type === "highlight" && !event.altKey) {
+      /* Highlights snap to a straight horizontal bar, like a marker run
+         along a line of text. Hold Alt to highlight freehand instead. */
+      item.points = [{ x: 0, y: 0 }, { x: p.x - start.x, y: 0 }];
+      render();
+      return;
+    }
 
     if (item.type === "pen" || item.type === "highlight") {
       const last = item.points[item.points.length - 1];

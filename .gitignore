@@ -54,3 +54,17 @@ uploads/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# API keys / provider credentials (AI keys are stored in the browser's
+# localStorage, never in the repo, but ignore any file that could hold them).
+*.apikey
+*api-key*
+*api_key*
+*apikeys*
+ai-config*.json
+ai-keys*.json
+.ai-config*
+.groq*
+.gemini*
+.openai*
+.anthropic*
