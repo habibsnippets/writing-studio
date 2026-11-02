@@ -659,6 +659,23 @@ el.search.addEventListener("input", renderList);
 
 /* --- opening ----------------------------------------------- */
 
+const LAST_DOC_KEY = "writing-studio:last-document";
+
+function rememberLastDocument(key, source) {
+  try { localStorage.setItem(LAST_DOC_KEY, JSON.stringify({ key, source })); } catch {}
+}
+
+/* The document that was open when the studio was last used, if it still
+   exists. Only notes and local posts are restored here. */
+function lastDocument() {
+  try {
+    const last = JSON.parse(localStorage.getItem(LAST_DOC_KEY) || "null");
+    if (last?.source === "note" && state.notes.notes.some((n) => n.path === last.key)) return last;
+    if (last?.source === "local" && state.localPosts.some((p) => p.slug === last.key)) return last;
+  } catch {}
+  return null;
+}
+
 async function openPost(key, source = "local") {
   await flushDirty();
 
@@ -673,6 +690,7 @@ async function openPost(key, source = "local") {
 
   state.source = source;
   state.meta = data.meta;
+  rememberLastDocument(key, source);
   state.legacy = source === "note" ? false : data.readOnly === true || (data.markdown === null && !!data.legacyHtml);
   state.tex = source === "site" && data.meta.format === ".tex";
   state.slugLocked = true;
@@ -3239,7 +3257,9 @@ function initSiteConnect() {
     await refreshList();
     const firstNote = state.notes.notes[0];
     const firstLocal = state.localPosts[0];
-    if (firstNote) await openPost(firstNote.path, "note");
+    const last = lastDocument();
+    if (last) await openPost(last.key, last.source);
+    else if (firstNote) await openPost(firstNote.path, "note");
     else if (firstLocal) await openPost(firstLocal.slug, "local");
     else resetEditor(null, null);
   } catch (err) {

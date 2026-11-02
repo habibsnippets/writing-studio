@@ -151,6 +151,9 @@ function textMetrics(el) {
 /* Auto-width, auto-height: the glyphs decide the size of the element,
    not a predefined rectangle. */
 function refreshTextSize(el) {
+  /* Rich text (pasted "Copy for draw" output) is sized by its rendered
+     bitmap, not by measuring plain glyphs. */
+  if (el.rich) return;
   const m = textMetrics(el);
   el.w = el.wrap ? Math.max(m.width, 16) : Math.max(m.width, el.fontSize * 0.55);
   el.h = m.height;
@@ -1054,7 +1057,7 @@ export function mountCanvas(opts = {}) {
 
   /* Render text containing $…$ maths to a crisp bitmap: markdown -> KaTeX
      HTML (server) -> SVG foreignObject -> PNG. */
-  async function mathTextToImage(text, color) {
+  async function mathTextToImage(text, color, fmt = {}) {
     const res = await fetch("/api/ai/render", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1068,7 +1071,7 @@ export function mountCanvas(opts = {}) {
     box.className = "math-paste-box";
     box.style.cssText =
       "position:fixed;left:-10000px;top:0;display:inline-block;max-width:520px;padding:6px 8px;" +
-      "font:18px/1.5 system-ui,sans-serif;visibility:hidden;";
+      `font:${fmt.fontSize || 18}px/1.5 ${fmt.fontFamily ? FONTS[fmt.fontFamily] || FONTS.sans : "system-ui,sans-serif"};visibility:hidden;`;
     box.innerHTML = data.html;
     box.querySelectorAll("p,ul,ol").forEach((n) => (n.style.margin = "0 0 0.5em"));
     box.querySelectorAll(".math-block,.katex-display").forEach((n) => (n.style.margin = "0.3em 0"));
@@ -1109,9 +1112,37 @@ export function mountCanvas(opts = {}) {
   async function pasteMathText(text) {
     try {
       notify("Rendering equation…");
-      const { src, naturalW, naturalH } = await mathTextToImage(text, state.style?.stroke || "#1e1e1e");
-      addImage(src, naturalW, naturalH);
-      notify("Equation added to the canvas");
+      /* Pasted output becomes a rich *text* element, not a flat picture:
+         double-click edits the markdown/maths source, and the font, size
+         and colour controls re-render it. */
+      const fontSize = state.style?.fontSize || 20;
+      const fontFamily = state.style?.fontFamily || "sans";
+      const stroke = state.style?.stroke || "#1e1e1e";
+      const { src, naturalW, naturalH } = await mathTextToImage(text, stroke, { fontSize, fontFamily });
+      if (state.editingId) commitText();
+      const { w: vw, h: vh } = stageSize();
+      const item = blankElement("text", wx(vw / 2) - naturalW / 2, wy(vh / 2) - naturalH / 2, 0, 0, state.style);
+      item.rich = true;
+      item.text = text;
+      item.w = naturalW;
+      item.h = naturalH;
+      item.stroke = stroke;
+      item.fontSize = fontSize;
+      item.fontFamily = fontFamily;
+      const img = new Image();
+      img.onload = () => render();
+      img.src = src;
+      richCache.set(item.id, { key: richKey(item), img, src });
+      state.elements.push(item);
+      state.selected = new Set([item.id]);
+      state.tool = "select";
+      syncToolUI();
+      syncStyleUI();
+      commitHistory();
+      updateUI();
+      render();
+      scheduleSave();
+      notify("Equation added · double-click to edit its text");
     } catch (err) {
       notify(err.message || "Could not render the equation");
     }
@@ -2146,8 +2177,46 @@ export function mountCanvas(opts = {}) {
     g.restore();
   }
 
+  /* Rendered bitmaps of rich text, keyed by element id. A bitmap is only
+     valid for the text/size/font/colour it was made from; when any of
+     those change it is re-rendered in the background. */
+  const richCache = new Map();
+  const richPending = new Map();
+  const richKey = (item) => [item.text, item.fontSize, item.fontFamily, item.stroke].join("\u0001");
+
+  function ensureRichRender(item) {
+    const key = richKey(item);
+    if (richPending.get(item.id) === key) return;
+    richPending.set(item.id, key);
+    mathTextToImage(item.text, item.stroke, { fontSize: item.fontSize, fontFamily: item.fontFamily })
+      .then(async ({ src, naturalW, naturalH }) => {
+        const img = new Image();
+        img.src = src;
+        await img.decode();
+        const live = state.elements.find((e) => e.id === item.id);
+        if (!live || richKey(live) !== key) return;
+        richCache.set(item.id, { key, img, src });
+        live.w = naturalW;
+        live.h = naturalH;
+        render();
+        scheduleSave();
+      })
+      .catch((err) => notify(err.message || "Could not render the equation"));
+  }
+
+  function drawRichText(g, item) {
+    const entry = richCache.get(item.id);
+    if (!entry || entry.key !== richKey(item)) ensureRichRender(item);
+    /* Keep showing the previous bitmap until the new one is ready. */
+    if (!entry?.img || !entry.img.complete || !entry.img.naturalWidth) return;
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(entry.img, item.x, item.y, item.w, item.h);
+  }
+
   function drawText(g, item) {
     if (!item.text) return;
+    if (item.rich) return drawRichText(g, item);
     const { lines } = textMetrics(item);
     g.font = fontSpec(item);
     g.fillStyle = item.stroke;
