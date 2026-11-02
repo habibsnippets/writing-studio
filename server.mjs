@@ -977,7 +977,8 @@ Guidelines:
 - If it contains mathematics or formulas, explain what each variable represents and the conceptual intuition.
 - If it contains domain jargon, define it simply.
 - If the user asks a specific follow-up question, answer that directly using the passage and visual excerpt.
-- Use clear Markdown formatting with KaTeX ($math$ or $$display math$$) where appropriate.`;
+- Use clear Markdown formatting. Write all maths as KaTeX LaTeX: inline as $...$ and display equations as $$...$$ on their own lines. Never use \\( \\), \\[ \\], plain-text or unicode maths, or put maths inside code blocks.
+- Keep to headings, bold, lists and short paragraphs; no HTML or tables.`;
 
   const userPrompt = question
     ? `Highlighted excerpt:\n"${text || "(See attached visual excerpt)"}"\n\nUser Question:\n${question}`

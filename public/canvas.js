@@ -1019,7 +1019,8 @@ export function mountCanvas(opts = {}) {
   /* "Copy for draw" tags the clipboard with this custom type so a later
      paste onto the canvas is recognised as canvas-ready output, even when
      the selection contained no maths at all. */
-  const DRAW_PASTE_TYPE = "web application/x-writing-studio-draw";
+  const DRAW_PASTE_MARK = "writing-studio-draw";
+  let lastDrawCopy = "";
   let katexCssPromise = null;
 
   /* KaTeX's stylesheet with its fonts inlined, so an SVG image can use it. */
@@ -3814,35 +3815,6 @@ export function mountCanvas(opts = {}) {
       .trim();
   }
 
-  /* Painting on the draw canvas does not need markdown chrome: headings,
-     bold markers, quotes and list dashes become plain readable text.
-     Maths spans are protected first, then restored untouched, because the
-     canvas renderer reads $…$ LaTeX as the equation to display. */
-  function markdownToCanvasText(md) {
-    const mathSpans = [];
-    const guarded = md.replace(
-      /\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g,
-      (m) => {
-        mathSpans.push(m);
-        return `\u0000${mathSpans.length - 1}\u0000`;
-      }
-    );
-    return guarded
-      .replace(/^#{1,6}\s+/gm, "")
-      .replace(/(\*\*|__)(.*?)\1/g, "$2")
-      .replace(/([^\\*])\*([^*\n]+)\*/g, "$1$2")
-      .replace(/`([^`\n]+)`/g, "$1")
-      .replace(/^> ?/gm, "")
-      .replace(/^[-*+]\s+/gm, "• ")
-      .replace(/^\s*(?:-{3,}|\*{3,})\s*$/gm, "")
-      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-      .replace(/[ \t]+\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .replace(/\\([*_~`[\]()#+\-.!>|])/g, "$1")
-      .trim()
-      .replace(/\u0000(\d+)\u0000/g, (_, i) => mathSpans[Number(i)] || "");
-  }
-
   async function copyAiSelectionForWrite() {
     const md = aiSelectionMarkdown();
     if (!md) return false;
@@ -3852,23 +3824,23 @@ export function mountCanvas(opts = {}) {
   }
 
   async function copyAiSelectionForDraw() {
+    /* The canvas renders markdown + maths itself (headings, bold, lists,
+       $…$ equations), so the full markdown is sent, not a stripped copy. */
     const md = aiSelectionMarkdown();
     if (!md) return false;
-    const text = markdownToCanvasText(md);
+    lastDrawCopy = md;
+    const html = `<meta name="${DRAW_PASTE_MARK}"><pre>${escapeHtml(md)}</pre>`;
     let ok = false;
     try {
-      /* Tag the clipboard so the canvas renders pasted output instead of
-         dropping the markdown syntax. Falls back to plain text when the
-         browser does not support custom clipboard types. */
       await navigator.clipboard.write([
         new ClipboardItem({
-          "text/plain": new Blob([text], { type: "text/plain" }),
-          [DRAW_PASTE_TYPE]: new Blob([text], { type: "text/plain" }),
+          "text/plain": new Blob([md], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
         }),
       ]);
       ok = true;
     } catch {
-      ok = await copyText(text);
+      ok = await copyText(md);
     }
     if (ok) notify("Copied for draw — paste on the canvas to render it");
     return ok;
@@ -3913,6 +3885,8 @@ export function mountCanvas(opts = {}) {
     positionAiSelToolbar();
   }
 
+  /* Lives on <body> so no transformed ancestor can offset its fixed position. */
+  if (el.aiSelToolbar && el.aiSelToolbar.parentElement !== document.body) document.body.appendChild(el.aiSelToolbar);
   /* A click on the toolbar must not collapse the selection it copies. */
   el.aiSelToolbar?.addEventListener("pointerdown", (event) => event.preventDefault());
   el.aiSelWriteBtn?.addEventListener("click", copyAiSelectionForWrite);
@@ -4519,10 +4493,11 @@ export function mountCanvas(opts = {}) {
 
     /* "Copy for draw" content renders as actual output (readable equation
        image) instead of pasting the markdown syntax. */
-    const drawPaste = event.clipboardData?.getData(DRAW_PASTE_TYPE)?.trim();
-    if (drawPaste) {
+    const plain = event.clipboardData?.getData("text/plain")?.trim();
+    const html = event.clipboardData?.getData("text/html") || "";
+    if (plain && (html.includes(DRAW_PASTE_MARK) || plain === lastDrawCopy.trim())) {
       event.preventDefault();
-      pasteMathText(drawPaste);
+      pasteMathText(plain);
       return;
     }
 
