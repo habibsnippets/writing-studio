@@ -1021,6 +1021,9 @@ export function mountCanvas(opts = {}) {
      the selection contained no maths at all. */
   const DRAW_PASTE_MARK = "writing-studio-draw";
   let lastDrawCopy = "";
+  /* Marker written to the system clipboard when canvas elements are copied. */
+  let elementClipToken = "";
+  let elementClipOnSystem = false;
   const normalizeClip = (t) => String(t || "").replace(/\s+/g, " ").trim();
   let katexCssPromise = null;
 
@@ -3160,6 +3163,18 @@ export function mountCanvas(opts = {}) {
     const items = selected();
     if (!items.length) return;
     state.clipboard = JSON.parse(JSON.stringify(items));
+    /* The element clipboard lives only in memory, so the system clipboard
+       would still hold whatever was copied before (an old equation). Put a
+       unique token there to overwrite it, and remember it so a later paste
+       knows the elements are the newest thing copied. */
+    lastDrawCopy = "";
+    elementClipToken = `writing-studio-elements:${uid()}`;
+    elementClipOnSystem = false;
+    const token = elementClipToken;
+    navigator.clipboard?.writeText?.(token).then(
+      () => { if (elementClipToken === token) elementClipOnSystem = true; },
+      () => {},
+    );
     notify(`Copied ${items.length} element${items.length === 1 ? "" : "s"}`);
   }
 
@@ -3847,6 +3862,7 @@ export function mountCanvas(opts = {}) {
     const md = aiSelectionMarkdown();
     if (!md) return false;
     lastDrawCopy = md;
+    elementClipToken = "";
     const html = `<meta name="${DRAW_PASTE_MARK}"><pre>${escapeHtml(md)}</pre>`;
     let ok = false;
     try {
@@ -4521,6 +4537,17 @@ export function mountCanvas(opts = {}) {
        image) instead of pasting the markdown syntax. */
     const plain = event.clipboardData?.getData("text/plain")?.trim();
     const html = event.clipboardData?.getData("text/html") || "";
+
+    /* Elements copied on the canvas are the newest copy when the system
+       clipboard holds our token (or we could not write it, so nothing
+       newer was recorded). Never fall through to an older equation. */
+    if (state.clipboard.length && elementClipToken &&
+        (plain === elementClipToken || (!elementClipOnSystem && !plain && !html))) {
+      event.preventDefault();
+      pasteClipboard();
+      return;
+    }
+
     if (plain && (html.includes(DRAW_PASTE_MARK) || normalizeClip(plain) === normalizeClip(lastDrawCopy))) {
       event.preventDefault();
       pasteMathText(plain);
