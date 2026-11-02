@@ -335,6 +335,14 @@ async function api(req, res, url) {
 
   /* --- Connected GitHub Pages workspace ------------------- */
 
+  /* Identity probe: lets a second launch (npm start, the CLI) recognise a
+     Writing Studio already serving this same folder instead of starting a
+     duplicate on another port, which the browser treats as a separate site
+     with its own settings. */
+  if (req.method === "GET" && route === "ping") {
+    return send(res, 200, { app: "writing-studio", dataDir: DATA_DIR });
+  }
+
   if (req.method === "GET" && route === "workspace") {
     const workspace = await readWorkspace();
     return send(res, 200, { workspace: await workspaceSummary(workspace) });
@@ -1258,6 +1266,17 @@ async function serveStatic(res, url) {
 
 /* --- Server Bootstrap with Port Conflict Handling --------- */
 
+/* True when the server on `port` is a Writing Studio using this data folder. */
+async function sameStudioOn(port) {
+  try {
+    const res = await fetch(`http://${HOST}:${port}/api/ping`, { signal: AbortSignal.timeout(1500) });
+    const info = await res.json();
+    return info?.app === "writing-studio" && path.resolve(info.dataDir) === path.resolve(DATA_DIR);
+  } catch {
+    return false;
+  }
+}
+
 export async function startServer(port = DEFAULT_PORT, attempts = 10) {
   try {
     await ensureLocalStore();
@@ -1276,7 +1295,11 @@ export async function startServer(port = DEFAULT_PORT, attempts = 10) {
     }
   });
 
-  server.once("error", (err) => {
+  server.once("error", async (err) => {
+    if (err.code === "EADDRINUSE" && (await sameStudioOn(port))) {
+      console.log(`\n  Writing Studio is already running for this folder:\n  http://${HOST}:${port}\n\n  Open that address — it is the same app and the same data.\n`);
+      process.exit(0);
+    }
     if (err.code === "EADDRINUSE" && attempts > 1) {
       console.log(`  Port ${port} in use, trying http://${HOST}:${port + 1}...`);
       startServer(port + 1, attempts - 1);

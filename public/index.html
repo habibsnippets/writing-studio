@@ -503,6 +503,17 @@
                 <button class="btn btn-sm" id="aiCardPinBtn" type="button">Pin to canvas</button>
               </div>
             </div>
+
+            <!-- Floating toolbar shown when text is selected inside the AI explanation -->
+            <div class="ai-sel-toolbar" id="aiSelToolbar" hidden>
+              <span class="ai-sel-label" aria-hidden="true">Copy</span>
+              <button class="ai-sel-btn" id="aiSelWriteBtn" type="button" title="Copy as markdown — paste into the write editor (syntax kept for the preview)">
+                for write
+              </button>
+              <button class="ai-sel-btn" id="aiSelDrawBtn" type="button" title="Copy for the draw canvas — pasting renders the equation/output instead of the syntax">
+                for draw
+              </button>
+            </div>
           </div>
 
           <div class="draw-foot">

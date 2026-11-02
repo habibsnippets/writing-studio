@@ -792,6 +792,9 @@ export function mountCanvas(opts = {}) {
     aiCardCopyBtn: $("aiCardCopyBtn"),
     aiCardInsertBtn: $("aiCardInsertBtn"),
     aiCardPinBtn: $("aiCardPinBtn"),
+    aiSelToolbar: $("aiSelToolbar"),
+    aiSelWriteBtn: $("aiSelWriteBtn"),
+    aiSelDrawBtn: $("aiSelDrawBtn"),
   };
 
   const state = {
@@ -1013,6 +1016,10 @@ export function mountCanvas(opts = {}) {
   /* --- pasted equations -------------------------------------- */
 
   const MATH_RE = /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?:^|[^\\$])\$(?![\s$])[^\n$]+?(?<![\s\\])\$(?![\d$])/;
+  /* "Copy for draw" tags the clipboard with this custom type so a later
+     paste onto the canvas is recognised as canvas-ready output, even when
+     the selection contained no maths at all. */
+  const DRAW_PASTE_TYPE = "web application/x-writing-studio-draw";
   let katexCssPromise = null;
 
   /* KaTeX's stylesheet with its fonts inlined, so an SVG image can use it. */
@@ -3583,6 +3590,7 @@ export function mountCanvas(opts = {}) {
   function closeAiExplainCard() {
     stopAiCardDrag();
     aiCardUserMoved = false;
+    hideAiSelToolbar();
     if (el.aiExplainCard) el.aiExplainCard.hidden = true;
     currentAiExplanation = "";
   }
@@ -3694,6 +3702,229 @@ export function mountCanvas(opts = {}) {
       el.aiCardResponse.appendChild(errDiv);
     }
   }
+
+  /* --- AI answer selection ---------------------------------- */
+
+  /* A selection inside the AI answer box offers two copies: "for write"
+     keeps the full markdown ($…$ maths, bold, headings) so pasting into
+     the write editor preserves the syntax the preview will render, while
+     "for draw" copies canvas-ready output that the canvas renders as an
+     actual equation/image when pasted. */
+
+  const AI_BLOCK_TAGS = new Set(["P", "DIV", "FIGURE", "FIGCAPTION", "TABLE", "THEAD", "TBODY", "SECTION", "DETAILS"]);
+
+  function aiNodeToMarkdown(node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      if (node.parentElement?.closest("pre")) return node.textContent;
+      return node.textContent.replace(/\s+/g, " ");
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+
+    /* Rendered KaTeX goes back to its LaTeX source, kept in $…$ / $$…$$
+       markdown so the write editor's preview shows a real equation. */
+    if (node.classList?.contains("katex")) {
+      const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
+      if (tex == null) return node.textContent;
+      return node.closest(".katex-display, .math-block") ? `$$${tex.trim()}$$` : `$${tex.trim()}$`;
+    }
+
+    const inner = [...node.childNodes].map(aiNodeToMarkdown).join("");
+
+    switch (node.tagName) {
+      case "STRONG": case "B": {
+        const t = inner.trim();
+        return t ? `**${t}**` : inner;
+      }
+      case "EM": case "I": {
+        const t = inner.trim();
+        return t ? `*${t}*` : inner;
+      }
+      case "CODE": {
+        const t = inner.trim();
+        return t ? `\`${t}\`` : inner;
+      }
+      case "PRE":
+        return `\`\`\`\n${node.textContent.replace(/\n+$/, "")}\n\`\`\`\n\n`;
+      case "A": {
+        const t = inner.trim();
+        const href = node.getAttribute("href") || "";
+        return t ? `[${t}](${href})` : t;
+      }
+      case "BR":
+        return "\n";
+      case "H1": case "H2": case "H3": case "H4": case "H5": case "H6": {
+        const t = inner.trim();
+        return t ? `${"#".repeat(Number(node.tagName[1]))} ${t}\n\n` : inner;
+      }
+      case "LI": {
+        const t = inner.trim();
+        return t ? `- ${t.replace(/\n+/g, " ")}\n` : inner;
+      }
+      case "UL": case "OL":
+        return `${inner.trimEnd()}\n\n`;
+      case "BLOCKQUOTE": {
+        const t = inner.trim();
+        return t ? `> ${t.replace(/\n+/g, "\n> ")}\n\n` : inner;
+      }
+      case "HR":
+        return "---\n\n";
+      case "IMG": {
+        const alt = node.getAttribute("alt") || "";
+        const src = node.getAttribute("src") || "";
+        return `![${alt}](${src})`;
+      }
+      default:
+        return AI_BLOCK_TAGS.has(node.tagName) ? `${inner}${inner.trim() ? "\n\n" : ""}` : inner;
+    }
+  }
+
+  function captureAiSelection() {
+    const sel = window.getSelection();
+    if (el.aiExplainCard?.hidden || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+
+    const response = el.aiCardResponse;
+    if (!response) return null;
+
+    let inside = false;
+    for (let i = 0; i < sel.rangeCount; i++) {
+      if (sel.getRangeAt(i).intersectsNode(response)) {
+        inside = true;
+        break;
+      }
+    }
+    if (!inside) return null;
+
+    const holder = document.createElement("div");
+    for (let i = 0; i < sel.rangeCount; i++) holder.appendChild(sel.getRangeAt(i).cloneContents());
+    return holder;
+  }
+
+  function aiSelectionMarkdown() {
+    const holder = captureAiSelection();
+    if (!holder) return "";
+    /* Whitespace-only text nodes between block elements would otherwise
+       leave stray leading spaces on the copied lines. */
+    [...holder.childNodes].forEach((n) => {
+      if (n.nodeType === Node.TEXT_NODE && !n.textContent.trim()) n.remove();
+    });
+    const md = [...holder.childNodes].map(aiNodeToMarkdown).join("");
+    return md
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  /* Painting on the draw canvas does not need markdown chrome: headings,
+     bold markers, quotes and list dashes become plain readable text.
+     Maths spans are protected first, then restored untouched, because the
+     canvas renderer reads $…$ LaTeX as the equation to display. */
+  function markdownToCanvasText(md) {
+    const mathSpans = [];
+    const guarded = md.replace(
+      /\$\$[\s\S]+?\$\$|\$[^$\n]+\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g,
+      (m) => {
+        mathSpans.push(m);
+        return `\u0000${mathSpans.length - 1}\u0000`;
+      }
+    );
+    return guarded
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/(\*\*|__)(.*?)\1/g, "$2")
+      .replace(/([^\\*])\*([^*\n]+)\*/g, "$1$2")
+      .replace(/`([^`\n]+)`/g, "$1")
+      .replace(/^> ?/gm, "")
+      .replace(/^[-*+]\s+/gm, "• ")
+      .replace(/^\s*(?:-{3,}|\*{3,})\s*$/gm, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\\([*_~`[\]()#+\-.!>|])/g, "$1")
+      .trim()
+      .replace(/\u0000(\d+)\u0000/g, (_, i) => mathSpans[Number(i)] || "");
+  }
+
+  async function copyAiSelectionForWrite() {
+    const md = aiSelectionMarkdown();
+    if (!md) return false;
+    const ok = await copyText(md);
+    if (ok) notify("Copied as markdown — paste into the write editor");
+    return ok;
+  }
+
+  async function copyAiSelectionForDraw() {
+    const md = aiSelectionMarkdown();
+    if (!md) return false;
+    const text = markdownToCanvasText(md);
+    let ok = false;
+    try {
+      /* Tag the clipboard so the canvas renders pasted output instead of
+         dropping the markdown syntax. Falls back to plain text when the
+         browser does not support custom clipboard types. */
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/plain": new Blob([text], { type: "text/plain" }),
+          [DRAW_PASTE_TYPE]: new Blob([text], { type: "text/plain" }),
+        }),
+      ]);
+      ok = true;
+    } catch {
+      ok = await copyText(text);
+    }
+    if (ok) notify("Copied for draw — paste on the canvas to render it");
+    return ok;
+  }
+
+  function hideAiSelToolbar() {
+    if (el.aiSelToolbar) el.aiSelToolbar.hidden = true;
+  }
+
+  function positionAiSelToolbar() {
+    if (!el.aiSelToolbar || el.aiSelToolbar.hidden) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) {
+      hideAiSelToolbar();
+      return;
+    }
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (!rect || (!rect.width && !rect.height)) {
+      hideAiSelToolbar();
+      return;
+    }
+    const w = el.aiSelToolbar.offsetWidth || 210;
+    const h = el.aiSelToolbar.offsetHeight || 34;
+    const left = clamp(rect.left, 8, Math.max(8, window.innerWidth - w - 8));
+    let top = rect.top - h - 6;
+    if (top < 8) top = rect.bottom + 6;
+    top = clamp(top, 8, Math.max(8, window.innerHeight - h - 8));
+    el.aiSelToolbar.style.left = `${Math.round(left)}px`;
+    el.aiSelToolbar.style.top = `${Math.round(top)}px`;
+  }
+
+  function updateAiSelToolbar() {
+    if (!el.aiSelToolbar || el.aiExplainCard?.hidden) {
+      hideAiSelToolbar();
+      return;
+    }
+    if (!aiSelectionMarkdown()) {
+      hideAiSelToolbar();
+      return;
+    }
+    el.aiSelToolbar.hidden = false;
+    positionAiSelToolbar();
+  }
+
+  /* A click on the toolbar must not collapse the selection it copies. */
+  el.aiSelToolbar?.addEventListener("pointerdown", (event) => event.preventDefault());
+  el.aiSelWriteBtn?.addEventListener("click", copyAiSelectionForWrite);
+  el.aiSelDrawBtn?.addEventListener("click", copyAiSelectionForDraw);
+  document.addEventListener("selectionchange", () => {
+    if (el.aiExplainCard?.hidden) {
+      hideAiSelToolbar();
+      return;
+    }
+    updateAiSelToolbar();
+  });
+  el.aiCardResponse?.addEventListener("scroll", positionAiSelToolbar);
 
   /* --- zoom ------------------------------------------------- */
 
@@ -4283,6 +4514,15 @@ export function mountCanvas(opts = {}) {
     if (file) {
       event.preventDefault();
       insertImageFile(file);
+      return;
+    }
+
+    /* "Copy for draw" content renders as actual output (readable equation
+       image) instead of pasting the markdown syntax. */
+    const drawPaste = event.clipboardData?.getData(DRAW_PASTE_TYPE)?.trim();
+    if (drawPaste) {
+      event.preventDefault();
+      pasteMathText(drawPaste);
       return;
     }
 
