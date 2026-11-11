@@ -78,3 +78,18 @@ jobs:
           # No code-signing certificate configured yet: stop electron-builder
           # from hunting for an identity on the macOS runner.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+  # electron-builder always creates a draft, and drafts are invisible to
+  # releases/latest — the link every download button on the site uses.
+  # Publish only after every platform has uploaded, so nobody can download
+  # a release that is still missing installers.
+  publish:
+    name: Publish release
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Un-draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false --latest
