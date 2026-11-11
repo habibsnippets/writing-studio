@@ -71,13 +71,45 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
+      # An empty CSC_LINK is read as a certificate path, so export only the
+      # variables that actually hold a value: without the secrets the build
+      # stays unsigned exactly as before, with them it signs and notarizes.
+      - name: Configure code signing
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          emit() { if [ -n "${2:-}" ]; then printf '%s=%s\n' "$1" "$2" >> "$GITHUB_ENV"; fi; }
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            if [ -n "${MAC_CSC_LINK:-}" ]; then
+              emit CSC_LINK "$MAC_CSC_LINK"
+              emit CSC_KEY_PASSWORD "$MAC_CSC_KEY_PASSWORD"
+              # Notarization needs all three; a partial set would fail the build.
+              if [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+                emit APPLE_ID "$APPLE_ID"
+                emit APPLE_APP_SPECIFIC_PASSWORD "$APPLE_APP_SPECIFIC_PASSWORD"
+                emit APPLE_TEAM_ID "$APPLE_TEAM_ID"
+              fi
+            else
+              # Unsigned build: stop electron-builder hunting for an identity.
+              printf 'CSC_IDENTITY_AUTO_DISCOVERY=false\n' >> "$GITHUB_ENV"
+            fi
+          elif [ "$RUNNER_OS" = "Windows" ] && [ -n "${WIN_CSC_LINK:-}" ]; then
+            emit WIN_CSC_LINK "$WIN_CSC_LINK"
+            emit WIN_CSC_KEY_PASSWORD "$WIN_CSC_KEY_PASSWORD"
+          fi
+
       - name: Build and publish installers
         run: ${{ matrix.command }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # No code-signing certificate configured yet: stop electron-builder
-          # from hunting for an identity on the macOS runner.
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
   # electron-builder always creates a draft, and drafts are invisible to
   # releases/latest — the link every download button on the site uses.

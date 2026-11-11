@@ -81,11 +81,23 @@ The exact file names for a release are always listed on that page.
 
 **Where your writing lives.** The desktop app keeps `content/`, `data/` and `dist/` in `Documents/WritingStudio` (`~/Documents/WritingStudio` on Linux and macOS) instead of inside the repository. On Windows that is `C:\Users\<you>\Documents\WritingStudio`. Installing a newer version over an older one does not touch that folder, so your posts, notes and settings survive updates. The first launch seeds the same “Welcome to Writing Studio” article a fresh clone gets.
 
-**First-launch warnings.** The builds are not code-signed yet, so:
+**First-launch warnings.** The published builds are not code-signed, so:
 
 - **macOS** — Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then confirm. (If the app was downloaded as a `.zip` or `.dmg` and macOS insists it is “damaged”, clear the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Writing Studio.app"`.)
 - **Windows** — SmartScreen shows “Windows protected your PC”. Choose **More info** → **Run anyway**.
 - **Linux** — `chmod +x Writing-Studio-<version>-linux-x86_64.AppImage` before the first run. The AppImage needs FUSE; on a system without it, run it with `--appimage-extract-and-run`.
+
+**Signing installers.** Signing is wired into the release workflow and turns itself on when these repository secrets exist; no code change is needed:
+
+| Secret | Purpose |
+|---|---|
+| `MAC_CSC_LINK` | Base64 of a Developer ID Application `.p12` |
+| `MAC_CSC_KEY_PASSWORD` | Password for that `.p12` |
+| `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization credentials; notarization runs only when all three are set |
+| `WIN_CSC_LINK` | Base64 of an Authenticode `.p12` |
+| `WIN_CSC_KEY_PASSWORD` | Password for that `.p12` |
+
+Until those certificates and credentials are added, releases stay unsigned and the warnings above apply.
 
 The desktop app and the command-line installs coexist happily: they share the same writing folder only if you point them at the same one.
 
