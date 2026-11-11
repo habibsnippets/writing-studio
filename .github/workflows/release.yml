@@ -141,6 +141,9 @@ jobs:
     name: Publish release
     needs: release
     runs-on: ubuntu-latest
+    # No checkout here, so gh cannot infer the repository from a git remote.
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Merge checksums into one file
         env:
