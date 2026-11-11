@@ -186,12 +186,14 @@ code, pre {
 }
 
 /* ── Sections ──────────────────────────────────────────────── */
+.download,
 .shots,
 .install {
   padding: 56px 0 48px;
   border-bottom: 1px solid var(--line);
 }
 
+.download h2,
 .shots h2,
 .install h2,
 .first-run h2 {
@@ -206,6 +208,63 @@ code, pre {
   line-height: 1.68;
   max-width: 62ch;
   margin-bottom: 34px;
+}
+
+/* ── Desktop downloads ─────────────────────────────────────── */
+.downloads {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(205px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.download-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  text-decoration: none;
+  transition: transform 0.35s var(--ease), border-color 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+
+.download-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--line-hi);
+  box-shadow: 0 18px 36px -30px rgba(34, 28, 17, 0.6);
+}
+
+.download-os {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+
+.download-file {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.download-note {
+  color: var(--fg-dim);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.download-card::after {
+  content: "Get the installer ↗";
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 /* ── Screenshots ───────────────────────────────────────────── */

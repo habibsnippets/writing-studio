@@ -48,6 +48,9 @@ uploads/
 *.tgz
 .freebuff/
 
+# Desktop installers built by electron-builder (`npm run dist`)
+dist-app/
+
 # Editor and operating-system clutter
 .vscode/
 .idea/

@@ -48,6 +48,50 @@
     </ul>
   </section>
 
+  <section class="download" aria-labelledby="download-title">
+    <h2 id="download-title">Download the desktop app</h2>
+    <p class="section-note">
+      The same studio in a native window — no Node.js, no terminal, no npm. Installers are
+      published on GitHub Releases, one page for all three platforms.
+    </p>
+    <div class="downloads">
+      <a class="download-card"
+         href="https://github.com/habibsnippets/writing-studio/releases/latest"
+         target="_blank" rel="noopener noreferrer">
+        <span class="download-os">Windows</span>
+        <span class="download-file">.exe installer</span>
+        <span class="download-note">Windows 10 or newer, 64-bit. A portable <code>.exe</code> is published too.</span>
+      </a>
+      <a class="download-card"
+         href="https://github.com/habibsnippets/writing-studio/releases/latest"
+         target="_blank" rel="noopener noreferrer">
+        <span class="download-os">macOS</span>
+        <span class="download-file">.dmg</span>
+        <span class="download-note">Apple Silicon and Intel builds.</span>
+      </a>
+      <a class="download-card"
+         href="https://github.com/habibsnippets/writing-studio/releases/latest"
+         target="_blank" rel="noopener noreferrer">
+        <span class="download-os">Linux</span>
+        <span class="download-file">.AppImage</span>
+        <span class="download-note">Runs anywhere. <code>.deb</code> and <code>.rpm</code> are published too.</span>
+      </a>
+    </div>
+    <p class="hint">
+      Your writing goes to <code>Documents/WritingStudio</code> and stays there when you install
+      a newer version. The command-line and <code>npx</code> installs below still work exactly as before.
+    </p>
+    <p class="hint">
+      First launch on macOS: right-click the app, choose <strong>Open</strong>, then confirm.
+      On Windows, SmartScreen may ask — <strong>More info</strong> → <strong>Run anyway</strong>.
+      On Linux: <code>chmod +x Writing-Studio-*.AppImage</code> before running it.
+    </p>
+    <p class="hint">
+      The installers are not code-signed yet, which is where those warnings come from. They are
+      built from this repository by a public GitHub Actions run on every release tag.
+    </p>
+  </section>
+
   <section class="shots" aria-labelledby="shots-title">
     <h2 id="shots-title">Inside the studio</h2>
     <p class="section-note">

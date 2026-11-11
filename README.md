@@ -22,6 +22,7 @@ There is no account, no cloud, no database, and no telemetry. Your writing stays
 ## Table of contents
 
 - [Why Writing Studio](#why-writing-studio)
+- [Download the desktop app](#download-the-desktop-app)
 - [Quick start](#quick-start)
 - [First run](#first-run)
 - [Feature guide](#feature-guide)
@@ -60,6 +61,33 @@ There is no account, no cloud, no database, and no telemetry. Your writing stays
 | Work on an existing Pages site | Read-only scanning, section confirmation, safe source edits, and archive-before-delete removal |
 | Use AI without a subscription | Bring your own key for Google AI Studio, OpenRouter, Groq, OpenAI, or Anthropic |
 | Keep control | Plain files, `127.0.0.1` only, no telemetry, no Git automation, and a `.gitignore` that keeps your writing out of this repository |
+
+---
+
+## Download the desktop app
+
+Prefer not to touch a terminal? Writing Studio ships as an Electron desktop application: the same studio, in a native window, with no Node.js required.
+
+Installers are on the **[GitHub Releases page](https://github.com/habibsnippets/writing-studio/releases/latest)**.
+
+| Platform | File | Notes |
+|---|---|---|
+| Windows 10/11, 64-bit | `Writing-Studio-<version>-Setup-x64.exe` | Installer with a Start Menu and desktop shortcut. `Writing-Studio-<version>-Portable-x64.exe` runs without installing. |
+| macOS, Apple Silicon | `Writing-Studio-<version>-mac-arm64.dmg` | A `.zip` build of the same version is published beside it. |
+| macOS, Intel | `Writing-Studio-<version>-mac-x64.dmg` | |
+| Linux, 64-bit | `Writing-Studio-<version>-linux-x86_64.AppImage` | `chmod +x` it, then run. `.deb` and `.rpm` packages are published too. |
+
+The exact file names for a release are always listed on that page.
+
+**Where your writing lives.** The desktop app keeps `content/`, `data/` and `dist/` in `Documents/WritingStudio` (`~/Documents/WritingStudio` on Linux and macOS) instead of inside the repository. On Windows that is `C:\Users\<you>\Documents\WritingStudio`. Installing a newer version over an older one does not touch that folder, so your posts, notes and settings survive updates. The first launch seeds the same “Welcome to Writing Studio” article a fresh clone gets.
+
+**First-launch warnings.** The builds are not code-signed yet, so:
+
+- **macOS** — Gatekeeper blocks the first launch. Right-click the app, choose **Open**, then confirm. (If the app was downloaded as a `.zip` or `.dmg` and macOS insists it is “damaged”, clear the quarantine flag with `xattr -dr com.apple.quarantine "/Applications/Writing Studio.app"`.)
+- **Windows** — SmartScreen shows “Windows protected your PC”. Choose **More info** → **Run anyway**.
+- **Linux** — `chmod +x Writing-Studio-<version>-linux-x86_64.AppImage` before the first run. The AppImage needs FUSE; on a system without it, run it with `--appimage-extract-and-run`.
+
+The desktop app and the command-line installs coexist happily: they share the same writing folder only if you point them at the same one.
 
 ---
 

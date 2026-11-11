@@ -1,0 +1,85 @@
+# ============================================================
+# Desktop packaging for Writing Studio.
+#
+#   npm run desktop     run from source with Electron
+#   npm run dist        build installers for the current OS into dist-app/
+#   npm run dist:win    Windows installer + portable exe
+#   npm run dist:mac    macOS dmg + zip, Intel and Apple Silicon
+#   npm run dist:linux  AppImage, deb and rpm
+#
+# Production dependencies (marked, katex, pdfjs-dist) are added to the
+# package automatically, which is what the server needs at runtime.
+# ============================================================
+
+appId: com.habibsnippets.writingstudio
+productName: Writing Studio
+copyright: Copyright © habibsnippets
+
+directories:
+  output: dist-app
+  buildResources: build
+
+files:
+  - server.mjs
+  - package.json
+  - LICENSE
+  - bin/**/*
+  - lib/**/*
+  - public/**/*
+  - content.example/**/*
+  - docs/**/*
+  - electron/**/*
+
+# No spaces or versionless names: these are the file names users see in
+# the browser's download bar and in GitHub's release asset list.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.png
+
+nsis:
+  artifactName: Writing-Studio-${version}-Setup-${arch}.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Writing Studio
+  uninstallDisplayName: Writing Studio ${version}
+
+portable:
+  artifactName: Writing-Studio-${version}-Portable-${arch}.${ext}
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  icon: build/icon.png
+  artifactName: Writing-Studio-${version}-mac-${arch}.${ext}
+
+dmg:
+  title: Writing Studio ${version}
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  category: Office
+  executableName: writing-studio
+  maintainer: habibsnippets
+  icon: build/icon.png
+  artifactName: Writing-Studio-${version}-linux-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Writing Studio
+      Comment: Local-first writing studio for Markdown, diagrams and PDFs

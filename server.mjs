@@ -12,7 +12,7 @@ import http from "node:http";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, writeFile, mkdir, unlink, access, rm, stat, readdir, copyFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, unlink, rm, stat, readdir, copyFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
@@ -94,7 +94,7 @@ try {
 } catch {
   const local = path.join(APP_DIR, "node_modules/pdfjs-dist");
   const parent = path.join(APP_DIR, "../node_modules/pdfjs-dist");
-  pdfjsDistDir = (await access(local).then(() => true, () => false)) ? local : parent;
+  pdfjsDistDir = (await stat(local).then(() => true, () => false)) ? local : parent;
 }
 
 let katexDistDir = null;
@@ -110,7 +110,11 @@ try {
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const slugOk = (s) =>
   /^[a-z0-9][a-z0-9-]{0,80}$/.test(s || "") && !WINDOWS_RESERVED.test(s || "");
-const exists = (p) => access(p).then(() => true, () => false);
+/* stat rather than access: the desktop build serves the app from inside
+   app.asar, where Electron implements stat() for folders but answers
+   access() with ENOENT. With access(), the starter content in
+   content.example/ looked missing and a fresh install opened empty. */
+const exists = (p) => stat(p).then(() => true, () => false);
 
 async function readPosts() {
   try {

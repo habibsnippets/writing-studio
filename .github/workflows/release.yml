@@ -1,0 +1,80 @@
+# ============================================================
+# Desktop release.
+#
+# Push a version tag that matches package.json ("v1.2.0" for 1.2.0)
+# and each platform builds its own installers. electron-builder then
+# attaches them to the GitHub release for that tag, creating a draft
+# release if none exists yet.
+#
+#   git tag v1.1.0
+#   git push origin v1.1.0
+#
+# `--publish always` is the documented electron-builder approach and
+# needs GH_TOKEN plus `contents: write`. No third-party action is
+# involved; the build command is the same one that runs locally.
+# ============================================================
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      # One runner at a time: on the very first release all three jobs would
+      # otherwise race to create the same draft release and one could 422.
+      max-parallel: 1
+      matrix:
+        include:
+          - os: ubuntu-latest
+            command: npx electron-builder --linux --x64 --publish always
+          - os: windows-latest
+            command: npx electron-builder --win --x64 --publish always
+          - os: macos-latest
+            command: npx electron-builder --mac --x64 --arm64 --publish always
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 rather than 20: electron-builder's dependency tree now
+      # declares >=22.12 for some packages (npm warns EBADENGINE on 20).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check
+        run: npm run check
+
+      # electron-builder publishes to v<package.json version>; a tag that
+      # disagrees would spread a broken release across three runners.
+      - name: Check tag matches package.json
+        run: node scripts/check-release-tag.mjs
+
+      # The rpm target needs rpm tooling on the runner.
+      - name: Install rpm tooling
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build and publish installers
+        run: ${{ matrix.command }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code-signing certificate configured yet: stop electron-builder
+          # from hunting for an identity on the macOS runner.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
