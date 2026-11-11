@@ -99,6 +99,10 @@ The exact file names for a release are always listed on that page.
 
 Until those certificates and credentials are added, releases stay unsigned and the warnings above apply.
 
+**Verifying a download.** Every release carries a `SHA256SUMS.txt`. Compare it with `sha256sum Writing-Studio-<version>-…` (`shasum -a 256` on macOS) before running an installer.
+
+**Updates.** A packaged app checks the release manifests (`latest*.yml`) shortly after launch, downloads a newer version in the background and installs it the next time you quit, with a system notification once it is ready. `npm start` and the command-line install never check for updates. An unsigned macOS build cannot apply an update — macOS refuses the download — so update it by hand until a certificate is configured.
+
 The desktop app and the command-line installs coexist happily: they share the same writing folder only if you point them at the same one.
 
 ---

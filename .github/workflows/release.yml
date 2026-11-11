@@ -111,6 +111,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # One file per platform: three runners appending to a shared file
+      # would race. The publish job merges them once everything is uploaded.
+      - name: Write checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist-app
+          files=$(ls -1 | grep -Ei '\.(exe|appimage|deb|rpm|dmg|zip)$' || true)
+          if [ -z "$files" ]; then
+            echo "No installers found to checksum" >&2
+            exit 1
+          fi
+          sha256sum $files > "SHA256SUMS-${RUNNER_OS}.txt"
+          cat "SHA256SUMS-${RUNNER_OS}.txt"
+
+      - name: Attach checksums to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" "dist-app/SHA256SUMS-${RUNNER_OS}.txt" --clobber
+
   # electron-builder always creates a draft, and drafts are invisible to
   # releases/latest — the link every download button on the site uses.
   # Publish only after every platform has uploaded, so nobody can download
@@ -120,6 +142,19 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
+      - name: Merge checksums into one file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p sums && cd sums
+          gh release download "$TAG" --pattern 'SHA256SUMS-*.txt'
+          cat SHA256SUMS-*.txt | LC_ALL=C sort -k2 > SHA256SUMS.txt
+          for f in SHA256SUMS-*.txt; do gh release delete-asset "$TAG" "$f" -y; done
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
+          cat SHA256SUMS.txt
+
       - name: Un-draft the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

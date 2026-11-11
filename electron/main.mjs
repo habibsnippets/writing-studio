@@ -238,6 +238,29 @@ function showStartupError(err) {
   app.quit();
 }
 
+/* --- Updates ---------------------------------------------- */
+
+/* electron-builder publishes latest*.yml beside every release, so the
+   updater only needs the app to be packaged. A failed check is logged and
+   ignored: writing must never be interrupted by a network problem, and an
+   unsigned macOS build will refuse the download anyway. */
+async function setupAutoUpdates() {
+  if (!app.isPackaged) return;
+  try {
+    /* electron-updater is CommonJS: depending on the Node version the
+       named export arrives either on the namespace or under default. */
+    const mod = await import("electron-updater");
+    const autoUpdater = mod.autoUpdater || mod.default?.autoUpdater;
+    if (!autoUpdater) throw new Error("electron-updater did not export autoUpdater");
+    autoUpdater.on("error", (err) => {
+      console.error(`Writing Studio update check failed: ${err?.message || err}`);
+    });
+    await autoUpdater.checkForUpdatesAndNotify();
+  } catch (err) {
+    console.error(`Writing Studio could not start the updater: ${err?.message || err}`);
+  }
+}
+
 /* --- Lifecycle -------------------------------------------- */
 
 app.setName("Writing Studio");
@@ -261,6 +284,8 @@ if (!hasLock) {
     try {
       studioBase = await ensureStudio(desktopDataDir());
       mainWindow = createWindow();
+      /* Not awaited: a slow network must not delay the window. */
+      void setupAutoUpdates();
     } catch (err) {
       showStartupError(err);
     }

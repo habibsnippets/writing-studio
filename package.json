@@ -1,6 +1,6 @@
 {
   "name": "writing-studio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A local-first writing studio for Markdown, diagrams, PDF annotation, private notes, and GitHub Pages publishing.",
   "keywords": [
     "writing",
@@ -55,6 +55,7 @@
   "author": "habibsnippets",
   "license": "MIT",
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "katex": "^0.16.47",
     "marked": "^15.0.12",
     "pdfjs-dist": "^6.4.299"
