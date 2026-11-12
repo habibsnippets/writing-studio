@@ -39,7 +39,7 @@ Drop a PDF or an arXiv link onto the canvas, render the pages you need, then hig
 
 ## Keep private notes private
 
-The **Private notes** group is a real folder tree under `data/notes/`. Notes never enter `content/posts.json`, the built blog, or a connected Pages site. Add images by dragging them into the editor; they are stored beside the note in `data/notes/.assets/`.
+The **Private notes** group is a real folder tree under `data/notes/`. Notes never enter `content/posts.json`, the built blog, or a connected Pages site. Add images by dragging them into the editor; they are stored in an `assets/` folder beside the note, so a whole topic folder can be moved or imported as one unit.
 
 ## Connect a GitHub Pages site
 

@@ -186,13 +186,16 @@ For the clone, `PORT=5000 npm start` (macOS/Linux) or `$env:PORT=5000; npm start
 The first start creates the store in the chosen folder:
 
 ```text
-content/                 ← your publishable local blog
-content/assets/          ← images and diagrams for local posts
-data/notes/              ← your private note vault
-data/notes/.assets/      ← private note images
+content/<slug>/          ← one folder per local article
+content/<slug>/<slug>.md ← the article body
+content/<slug>/assets/   ← its images and exported diagrams
+data/notes/<folder>/     ← your private note vault
+data/notes/<folder>/assets/ ← images that belong to that topic
 data/workspace.json      ← which GitHub Pages folder is connected
 dist/                    ← generated static pages
 ```
+
+Older loose-file layouts (`content/<slug>.md` and `data/notes/.assets/`) are upgraded automatically on the next start, so existing writing keeps working.
 
 It also seeds a generic **Welcome to Writing Studio** article from `content.example/` so the studio opens with something to read. You can edit or delete it immediately. The seed runs only when `content/posts.json` is missing and no post files already exist; it never overwrites your work.
 
@@ -219,7 +222,7 @@ The **Local blog** is the studio's own publishable archive. It is separate from 
 - Press **Preview**, then **Recompile** (or `Ctrl/⌘ + Enter`) to refresh the rendered article on demand.
 - Word count and reading time are calculated for each post.
 - Code blocks get copy buttons; tables scroll horizontally when they are wide.
-- Upload images by dragging them into the editor. They are stored in `content/assets/<slug>/` and referenced automatically.
+- Upload images by dragging them into the editor. They are stored in `content/<slug>/assets/` and referenced relatively, so the whole article folder can be moved, imported, or backed up as one unit.
 - **Publish** marks the post live and rebuilds `dist/`; **Move back to drafts** marks it as a draft.
 - **Pin from top** keeps an article at the top of the archive.
 - **Download Markdown** exports the source file.
@@ -308,7 +311,13 @@ The **Private notes** group in the sidebar is an Obsidian-style folder vault und
 - The dialog shows the destination path, such as `data/notes/Projects/Research`, before you create anything.
 - When the vault is empty, the sidebar offers **New folder** and **New note** buttons directly.
 - Folders can be expanded or collapsed. The count beside a folder includes notes in all of its subfolders.
-- Note images are stored in `data/notes/.assets/<note-key>/` and served through `/note-assets/`.
+- Note images are stored in an `assets/` folder beside the note, such as `data/notes/Projects/Research/assets/diagram.png`, and served through `/note-assets/`.
+- **Import → A folder or Obsidian vault…** keeps the chosen folder's structure, including subfolders, attachments and drawings. The entire vault lands under `data/notes/` with its root folder name intact. You can also drag a folder or vault from Finder/Explorer onto the Private notes group.
+- Obsidian syntax is rendered in the preview: `[[Note]]` links, `[[Note#Heading|Alias]]` heading links, `![[Note]]` transclusion, `![[picture.png|320]]` sized image embeds, PDF/audio/video embeds, callouts, highlights, tags and `%%comments%%`.
+- `[[Note]]` links open the linked note in the studio. Missing targets show a small dashed marker instead of a broken link.
+- Obsidian Canvas (`.canvas`) and Excalidraw (`.excalidraw`, `.excalidraw.md`) files are embedded as read-only drawings with their text, images, edges and arrowheads. Excalidraw text is not editable in the studio; open the drawing in Obsidian to change it.
+- `.obsidian/` configuration folders and other hidden files are skipped during import. `.excalidraw.md` drawing payloads are kept as attachments but are not listed as prose notes.
+- Use the arrow button on a private note to **move it to the Local blog** as a draft, pictures included.
 - Notes use frontmatter for `title`, `created`, and `updated`; the body is ordinary Markdown.
 - The status chip says **Private**, and Publish / Pin / Unpublish are not offered.
 - Deleting a note or folder is permanent; the confirmation dialog tells you how many notes will be removed.
@@ -377,7 +386,7 @@ Path handling is deliberately OS-agnostic: every repo-relative key is stored wit
 Open a connected-site post and choose **⋯ → Remove from Pages…**. The studio:
 
 1. **Archives first** — copies the post to the **Local blog** as a draft. Markdown stays Markdown; imported HTML stays HTML.
-2. Copies referenced local images and downloads into `content/assets/<slug>/`, rewriting the paths for the local copy. Code blocks are left untouched.
+2. Copies referenced local images and downloads into `content/<slug>/assets/`, rewriting the paths for the local copy. Code blocks are left untouched.
 3. Deletes the source file from the Pages repo and removes its `posts.json` entry when the site keeps one.
 4. Opens the archived copy as a local draft so you can edit a Markdown copy, preview an HTML copy, publish the local draft, or copy it back into the Pages site later.
 5. Shows the exact commands needed to publish the removal, including a stale built page when one is detected and the site's own build command.
@@ -425,11 +434,11 @@ When you clone the repository, the folders below sit in the repository. When you
 | Path | Contents | In Git? |
 |---|---|---|
 | `content/posts.json` | Local blog index: titles, dates, tags, draft and pinned flags | **No** |
-| `content/<slug>.md` | Local blog articles | **No** |
-| `content/<slug>.html` | Archived or imported HTML articles | **No** |
-| `content/assets/<slug>/` | Local post images and exported diagrams | **No** |
+| `content/<slug>/<slug>.md` | Local blog article body | **No** |
+| `content/<slug>/<slug>.html` | Archived or imported HTML articles | **No** |
+| `content/<slug>/assets/` | Local post images and exported diagrams | **No** |
 | `data/notes/` | Private notes, in real folders | **No** |
-| `data/notes/.assets/` | Private note images | **No** |
+| `data/notes/<folder>/assets/` | Images and files that belong to a private topic | **No** |
 | `data/workspace.json` | Saved GitHub Pages path and confirmed sections | **No** |
 | `dist/` | Generated static pages | **No** |
 | `node_modules/` | Installed dependencies | **No** |
@@ -492,7 +501,7 @@ The local blog, private notes, and connected Pages site use ordinary files, so t
 
 - `dist/index.html` — the archive of published articles.
 - `dist/<slug>/index.html` — each published article.
-- `dist/assets/<slug>/` — copied post images.
+- `dist/assets/writing/<slug>/assets/` — copied post images, matching the relative paths in the Markdown.
 
 Drafts are skipped during the build, so unfinished work never appears on the local site. The local site is for previewing and for keeping a portable static archive; it is not pushed anywhere automatically.
 
@@ -613,17 +622,22 @@ The API is local to `127.0.0.1` and is used by the studio UI. It is documented h
 | `POST` | `/api/publish` | Mark a local post published and rebuild `dist/` |
 | `POST` | `/api/unpublish` | Move a local post back to drafts |
 | `POST` | `/api/delete` | Delete a local post and its assets |
+| `POST` | `/api/posts/move-to-note` | Move a local post and its assets into private notes |
 | `GET` | `/api/export?slug=<slug>` | Download a post's Markdown source |
+| `POST` | `/api/import` | Import one Markdown or text file |
+| `POST` | `/api/import/folder` | Import one file from a folder, preserving its relative path |
 | `GET` | `/api/notes/tree` | List private notes, folders, and counts |
 | `GET` | `/api/notes/note?path=<path>` | Read one private note |
 | `POST` | `/api/notes/create` | Create a private note |
 | `POST` | `/api/notes/note` | Save a private note |
 | `POST` | `/api/notes/delete` | Delete a private note and its images |
+| `POST` | `/api/notes/move-to-local` | Move a private note and its assets to the Local blog |
 | `POST` | `/api/notes/folder` | Create a private folder |
 | `POST` | `/api/notes/folder/delete` | Delete a private folder and everything inside |
 | `POST` | `/api/notes/preview` | Render a private note preview |
 | `POST` | `/api/notes/upload?path=<path>` | Upload a private note image |
-| `GET` | `/note-assets/<path>` | Serve private note images |
+| `GET` | `/note-assets/<path>` | Serve private note images and attachments |
+| `GET` | `/assets/writing/<slug>/<path>` | Serve local post images, including `assets/` |
 | `GET` | `/api/workspace` | Read the saved Pages connection |
 | `POST` | `/api/workspace/scan` | Read-only scan of a Pages repository |
 | `POST` | `/api/workspace/inspect` | Inspect one additional writing folder |

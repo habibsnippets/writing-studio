@@ -122,8 +122,13 @@ const el = {
   siteManageUrl: $("siteManageUrl"),
   siteManageSections: $("siteManageSections"),
   importBtn: $("importBtn"),
+  importMenu: $("importMenu"),
+  importFilesChoice: $("importFilesChoice"),
+  importFolderChoice: $("importFolderChoice"),
   importInput: $("importInput"),
+  importFolderInput: $("importFolderInput"),
   importModal: $("importModal"),
+  importModalTitle: $("importModalTitle"),
   importModalClose: $("importModalClose"),
   importModalCancel: $("importModalCancel"),
   importConfirm: $("importConfirm"),
@@ -191,7 +196,10 @@ const state = {
   minutes: 1,
   noteModalMode: "note",
   noteDraftFolder: "",
+  importMode: "files",
+  pendingAnchor: "",
   collapsedFolders: new Set(),
+  collapsedGroups: new Set(),
 };
 
 /* The diagram canvas owns its own scene. It asks us for a document key,
@@ -371,18 +379,23 @@ const ICON = {
   notePlus: `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M3.5 1.8h5.2l3.8 3.8v8.6H3.5V1.8Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8.5 1.9v3.9h3.9M8 7.5v5M5.5 10h5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   folderPlus: `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.8 4.3h4l1.3 1.5h7.1v6.4a1.5 1.5 0 0 1-1.5 1.5H3.3a1.5 1.5 0 0 1-1.5-1.5V4.3Z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 8v4M6 10h4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>`,
   trash: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.3 4.5V2.8h3.4v1.7M4.4 4.5l.6 9h6l.6-9M6.7 7v4M9.3 7v4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  toBlog: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5v9M13 3.5v9M4.5 8h6M8 5.5 10.5 8 8 10.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  toNote: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5v9M13 3.5v9M11 8H5M7.5 5.5 5 8l2.5 2.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
-function groupHead(label, icon, actions = [], drop = "") {
+function groupHead(label, icon, actions = [], drop = "", { group = "", collapsed = false } = {}) {
   const buttons = actions
     .map(
       ({ action, label: actionLabel, icon: actionIcon = ICON.plus }) => `
         <button class="group-action" type="button" data-action="${escapeHtml(action)}" title="${escapeHtml(actionLabel)}" aria-label="${escapeHtml(actionLabel)}">${actionIcon}</button>`
     )
     .join("");
+  const name = group
+    ? `<button class="group-name group-toggle" type="button" data-action="toggle-group" data-group="${escapeHtml(group)}" aria-expanded="${collapsed ? "false" : "true"}">${ICON.chevron}${icon}${escapeHtml(label)}</button>`
+    : `<span class="group-name">${icon}${escapeHtml(label)}</span>`;
   return `
     <div class="group group-head"${drop ? ` data-drop="${escapeHtml(drop)}"` : ""}>
-      <span class="group-name">${icon}${escapeHtml(label)}</span>
+      ${name}
       ${buttons ? `<span class="group-actions">${buttons}</span>` : ""}
     </div>`;
 }
@@ -447,6 +460,7 @@ function renderNoteRow(note, depth, q) {
         </span>
       </button>
       <span class="tree-actions">
+        <button class="tree-action" type="button" data-action="note-to-local" data-path="${escapeHtml(note.path)}" title="Move to local blog" aria-label="Move ${escapeHtml(note.title)} to the local blog">${ICON.toBlog}</button>
         <button class="tree-action danger" type="button" data-action="delete-note" data-path="${escapeHtml(note.path)}" title="Delete note" aria-label="Delete ${escapeHtml(note.title)}">${ICON.trash}</button>
       </span>
     </div>`;
@@ -486,10 +500,17 @@ function renderLocalItem(post, q) {
   const active = state.source === "local" && state.meta?.slug === post.slug;
   const archived = post.archivedFrom ? "archived · " : "";
   return `
-    <button class="item" type="button" data-source="local" data-key="${escapeHtml(post.slug)}" aria-current="${active ? "true" : "false"}">
-      <span class="item-title">${post.pinned ? pinMark : ""}${escapeHtml(post.title)}</span>
-      <span class="item-meta">${archived}${post.pinned ? "pinned · " : ""}${post.draft ? "draft · " : ""}${escapeHtml(post.date || "")} · ${post.minutes || 1} min${post.hasBody ? "" : " · no file"}</span>
-    </button>`;
+    <div class="tree-row note-row">
+      <button class="tree-main" type="button" data-source="local" data-key="${escapeHtml(post.slug)}" aria-current="${active ? "true" : "false"}">
+        <span class="tree-copy">
+          <span class="item-title">${post.pinned ? pinMark : ""}${escapeHtml(post.title)}</span>
+          <span class="item-meta">${archived}${post.pinned ? "pinned · " : ""}${post.draft ? "draft · " : ""}${escapeHtml(post.date || "")} · ${post.minutes || 1} min${post.hasBody ? "" : " · no file"}</span>
+        </span>
+      </button>
+      <span class="tree-actions">
+        <button class="tree-action" type="button" data-action="local-to-note" data-slug="${escapeHtml(post.slug)}" title="Move to private notes" aria-label="Move ${escapeHtml(post.title)} to private notes">${ICON.toNote}</button>
+      </span>
+    </div>`;
 }
 
 function renderSiteItem(post, q) {
@@ -512,44 +533,60 @@ function renderList() {
   const groups = [];
 
   const noteCount = state.notes?.counts?.notes ?? state.notes?.notes?.length ?? 0;
+  const notesCollapsed = !q && state.collapsedGroups.has("notes");
   groups.push(
-    groupHead(`Private notes · ${noteCount}`, ICON.lock, [
-      { action: "new-note", label: "New private note", icon: ICON.notePlus },
-      { action: "new-folder", label: "New private folder", icon: ICON.folderPlus },
-    ], "note:")
+    groupHead(
+      `Private notes · ${noteCount}`,
+      ICON.lock,
+      [
+        { action: "new-note", label: "New private note", icon: ICON.notePlus },
+        { action: "new-folder", label: "New private folder", icon: ICON.folderPlus },
+      ],
+      "note:",
+      { group: "notes", collapsed: notesCollapsed }
+    )
   );
 
-  const tree = buildNoteTree(state.notes?.folders || [], state.notes?.notes || []);
-  const treeHtml = renderNoteTree(tree, 0, q);
-  if (treeHtml) {
-    groups.push(`<div class="note-tree">${treeHtml}</div>`);
-  } else {
-    groups.push(
-      `<div class="tree-empty">${
-        q
-          ? "No private notes match that filter."
-          : `<strong>Your private vault is empty.</strong>
-             <span>Create a folder to group notes, or start a note at the root. Everything stays under <code>data/notes</code>.</span>
-             <span class="tree-empty-actions">
-               <button class="btn" type="button" data-action="new-folder">${ICON.folderPlus} New folder</button>
-               <button class="btn btn-primary" type="button" data-action="new-note">${ICON.notePlus} New note</button>
-             </span>`
-      }</div>`
-    );
+  if (!notesCollapsed) {
+    const tree = buildNoteTree(state.notes?.folders || [], state.notes?.notes || []);
+    const treeHtml = renderNoteTree(tree, 0, q);
+    if (treeHtml) {
+      groups.push(`<div class="note-tree">${treeHtml}</div>`);
+    } else {
+      groups.push(
+        `<div class="tree-empty">${
+          q
+            ? "No private notes match that filter."
+            : `<strong>Your private vault is empty.</strong>
+               <span>Create a folder to group notes, or start a note at the root. Everything stays under <code>data/notes</code>.</span>
+               <span class="tree-empty-actions">
+                 <button class="btn" type="button" data-action="new-folder">${ICON.folderPlus} New folder</button>
+                 <button class="btn btn-primary" type="button" data-action="new-note">${ICON.notePlus} New note</button>
+               </span>`
+        }</div>`
+      );
+    }
   }
 
+  const localCollapsed = !q && state.collapsedGroups.has("local");
   groups.push(
-    groupHead(`Local blog · ${state.localPosts.length}`, ICON.pencil, [
-      { action: "new-local-post", label: "New local blog post" },
-    ], "local")
+    groupHead(
+      `Local blog · ${state.localPosts.length}`,
+      ICON.pencil,
+      [{ action: "new-local-post", label: "New local blog post" }],
+      "local",
+      { group: "local", collapsed: localCollapsed }
+    )
   );
-  const local = [...state.localPosts].sort(
-    (a, b) =>
-      Number(!!b.pinned) - Number(!!a.pinned) ||
-      String(b.dateISO || "").localeCompare(String(a.dateISO || ""))
-  );
-  const localHtml = local.map((post) => renderLocalItem(post, q)).join("");
-  groups.push(localHtml || `<p class="tree-empty">${q ? "No local blog posts match." : "No local blog posts yet. Use the + to start one."}</p>`);
+  if (!localCollapsed) {
+    const local = [...state.localPosts].sort(
+      (a, b) =>
+        Number(!!b.pinned) - Number(!!a.pinned) ||
+        String(b.dateISO || "").localeCompare(String(a.dateISO || ""))
+    );
+    const localHtml = local.map((post) => renderLocalItem(post, q)).join("");
+    groups.push(localHtml || `<p class="tree-empty">${q ? "No local blog posts match." : "No local blog posts yet. Use the + to start one."}</p>`);
+  }
 
   if (state.workspace) {
     groups.push(
@@ -573,8 +610,10 @@ function renderList() {
       /* An empty section still shows, so a new site's blog / notes /
          articles folders appear in the sidebar before the first post. */
       if (!matching.length && (q || posts.length)) continue;
-      siteHtml += `<div class="group group-sub" data-drop="site:${escapeHtml(section.id)}">${escapeHtml(section.name)} · ${matching.length}</div>`;
-      siteHtml += matching.map((post) => renderSiteItem(post, "")).join("");
+      const group = `site:${section.id}`;
+      const sectionCollapsed = !q && state.collapsedGroups.has(group);
+      siteHtml += `<button class="group group-sub group-toggle-sub" type="button" data-action="toggle-group" data-group="${escapeHtml(group)}" data-drop="site:${escapeHtml(section.id)}" aria-expanded="${sectionCollapsed ? "false" : "true"}">${ICON.chevron}<span>${escapeHtml(section.name)} · ${matching.length}</span></button>`;
+      if (!sectionCollapsed) siteHtml += matching.map((post) => renderSiteItem(post, "")).join("");
     }
     groups.push(siteHtml || `<p class="tree-empty">${q ? "No Pages writing matches." : "No writing found in the connected site."}</p>`);
   }
@@ -599,6 +638,7 @@ function renderGit() {
 }
 
 const COLLAPSE_KEY = "writing-studio:collapsed-folders";
+const GROUP_COLLAPSE_KEY = "writing-studio:collapsed-groups";
 
 function persistCollapsed() {
   try {
@@ -606,8 +646,22 @@ function persistCollapsed() {
   } catch {}
 }
 
+function persistCollapsedGroups() {
+  try {
+    localStorage.setItem(GROUP_COLLAPSE_KEY, JSON.stringify([...state.collapsedGroups]));
+  } catch {}
+}
+
 async function handleListAction(button) {
   const action = button.dataset.action;
+  if (action === "toggle-group") {
+    const group = button.dataset.group;
+    if (state.collapsedGroups.has(group)) state.collapsedGroups.delete(group);
+    else state.collapsedGroups.add(group);
+    persistCollapsedGroups();
+    renderList();
+    return;
+  }
   if (action === "toggle-folder") {
     const folder = button.dataset.folder;
     if (state.collapsedFolders.has(folder)) state.collapsedFolders.delete(folder);
@@ -638,6 +692,14 @@ async function handleListAction(button) {
   }
   if (action === "delete-note") {
     await removeNote(button.dataset.path);
+    return;
+  }
+  if (action === "note-to-local") {
+    await moveNoteToLocal(button.dataset.path);
+    return;
+  }
+  if (action === "local-to-note") {
+    await moveLocalToNote(button.dataset.slug);
     return;
   }
   if (action === "delete-folder") {
@@ -676,8 +738,9 @@ function lastDocument() {
   return null;
 }
 
-async function openPost(key, source = "local") {
+async function openPost(key, source = "local", anchor = "") {
   await flushDirty();
+  state.pendingAnchor = source === "note" ? String(anchor || "") : "";
 
   let data;
   if (source === "note") {
@@ -1104,6 +1167,200 @@ function updatePreviewChrome({ compiling = false } = {}) {
 
 el.recompileBtn?.addEventListener("click", () => renderPreview());
 
+/* Overleaf-style source sync: clicking a rendered block puts the caret on
+   the Markdown that produced it. The preview HTML has no source ranges, so
+   we match its text against the editor after stripping punctuation and
+   formatting. Embeds and images are matched by their file reference. */
+
+const SYNC_BLOCK_SELECTOR =
+  "h1,h2,h3,h4,h5,h6,p,li,pre,blockquote,td,th,figcaption,figure,img";
+const SYNC_IGNORE_SELECTOR =
+  "a,button,input,textarea,select,audio,video,iframe,canvas,svg,object,embed,summary,[role='button'],[contenteditable='true']";
+
+/* Normalize to letters/digits + single spaces, keeping a map from each
+   normalized character back to its offset in the Markdown source. */
+function normalizeWithMap(source) {
+  const chars = [];
+  const map = [];
+  let pendingSpace = false;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (/[\p{L}\p{N}]/u.test(ch)) {
+      if (pendingSpace && chars.length) {
+        chars.push(" ");
+        map.push(i);
+      }
+      pendingSpace = false;
+      chars.push(ch.toLowerCase());
+      map.push(i);
+    } else if (/\s/.test(ch)) {
+      pendingSpace = true;
+    }
+  }
+  return { text: chars.join(""), map };
+}
+
+function collectOccurrences(haystack, needle) {
+  const found = [];
+  if (!needle) return found;
+  let at = haystack.indexOf(needle);
+  while (at !== -1 && found.length < 400) {
+    found.push(at);
+    at = haystack.indexOf(needle, at + 1);
+  }
+  return found;
+}
+
+/* Long paragraphs are matched by their opening words, so a preview that
+   adds numbers or inline decorations still finds its source. */
+function findTextOffset(source, text, fraction = 0) {
+  const hay = normalizeWithMap(source);
+  const target = normalizeWithMap(text).text.trim();
+  if (!hay.text || target.length < 2) return -1;
+
+  const lengths = [];
+  for (const n of [target.length, 160, 100, 60, 36, 20, 12, 7, 4]) {
+    if (n <= target.length && n >= 2 && !lengths.includes(n)) lengths.push(n);
+  }
+
+  let best = -1;
+  let bestScore = Infinity;
+  for (const length of lengths) {
+    const needle = target.slice(0, length);
+    const occurrences = collectOccurrences(hay.text, needle);
+    if (!occurrences.length) continue;
+    for (const at of occurrences) {
+      const score = Math.abs(at / hay.text.length - fraction);
+      if (score < bestScore) {
+        best = hay.map[at];
+        bestScore = score;
+      }
+    }
+    /* A full-text hit is trustworthy once found; a short prefix only wins
+       when nothing longer is available. */
+    if (best >= 0 && length >= Math.min(20, target.length)) break;
+  }
+  return best;
+}
+
+function findReferenceOffset(source, reference) {
+  const clean = String(reference || "").trim().replace(/\\/g, "/");
+  if (!clean) return -1;
+  const base = clean.split("/").pop();
+  const stem = base.replace(/\.[^.]+$/, "");
+  const cleanStem = clean.replace(/\.[^.]+$/, "");
+  for (const candidate of [clean, base, cleanStem, stem]) {
+    if (!candidate) continue;
+    for (const needle of [
+      `![[${candidate}`,
+      `[[${candidate}`,
+      `](${candidate}`,
+      `src="${candidate}`,
+      `src='${candidate}`,
+    ]) {
+      const at = source.indexOf(needle);
+      if (at !== -1) return at;
+    }
+    if (base && base !== clean) {
+      const at = source.toLowerCase().indexOf(base.toLowerCase());
+      if (at !== -1) return at;
+    }
+  }
+  return -1;
+}
+
+function findImageOffset(source, image) {
+  const src = image.getAttribute("src") || "";
+  let path = src;
+  try {
+    path = new URL(src, "https://studio.local/").pathname;
+  } catch {}
+  try {
+    path = decodeURIComponent(path);
+  } catch {}
+  const bySrc = findReferenceOffset(source, path);
+  if (bySrc >= 0) return bySrc;
+  const alt = (image.getAttribute("alt") || "").trim();
+  if (alt) {
+    const byAlt = findReferenceOffset(source, alt);
+    if (byAlt >= 0) return byAlt;
+    const byAltText = findTextOffset(source, alt);
+    if (byAltText >= 0) return byAltText;
+  }
+  return -1;
+}
+
+function sourceOffsetForPreviewNode(node, doc) {
+  const source = el.editor.value;
+  if (!source) return -1;
+
+  const embed = node.closest("[data-obsidian-embed]");
+  if (embed) {
+    const target = embed.getAttribute("data-obsidian-embed") || "";
+    const at = findReferenceOffset(source, target);
+    if (at >= 0) return at;
+  }
+
+  const image = node.closest("img") || node.closest("figure")?.querySelector("img");
+  if (image) return findImageOffset(source, image);
+
+  /* Links, controls, media and drawings keep their own behavior. */
+  if (node.closest(SYNC_IGNORE_SELECTOR)) return -1;
+
+  const block = node.closest(SYNC_BLOCK_SELECTOR);
+  if (!block) return -1;
+  const text = (block.innerText || block.textContent || "").trim();
+  if (!text) return -1;
+
+  let fraction = 0;
+  const blocks = [...(doc.body?.querySelectorAll(SYNC_BLOCK_SELECTOR) || [])];
+  const index = blocks.indexOf(block);
+  if (index >= 0 && blocks.length > 1) fraction = index / (blocks.length - 1);
+  return findTextOffset(source, text, fraction);
+}
+
+function jumpEditorToOffset(offset) {
+  const text = el.editor.value;
+  const caret = Math.max(0, Math.min(text.length, offset));
+
+  /* The write pane must be on screen for the jump to be visible. */
+  if (state.previewFocusOn) exitPreviewFocus();
+  if (state.mode === "draw") setMode("write");
+
+  el.editor.focus({ preventScroll: true });
+  el.editor.setSelectionRange(caret, caret);
+
+  const style = getComputedStyle(el.editor);
+  const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.6 || 24;
+  const padTop = parseFloat(style.paddingTop) || 0;
+  const line = text.slice(0, caret).split("\n").length - 1;
+  const top = padTop + line * lineHeight - el.editor.clientHeight / 2 + lineHeight;
+  el.editor.scrollTop = Math.max(0, top);
+}
+
+function initPreviewSync() {
+  const doc = el.preview.contentDocument;
+  if (!doc) return;
+  const win = doc.defaultView;
+  if (!win) return;
+
+  const onClick = (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    /* A single click that ends a text selection should not steal it. A
+       double-click always selects its word, so that guard cannot apply. */
+    if (event.type === "click" && event.detail === 1 && win.getSelection?.()?.toString().trim()) return;
+    const node = event.target;
+    if (!(node instanceof win.Element)) return;
+    const offset = sourceOffsetForPreviewNode(node, doc);
+    if (offset < 0) return;
+    jumpEditorToOffset(offset);
+  };
+
+  doc.addEventListener("click", onClick);
+  doc.addEventListener("dblclick", onClick);
+}
+
 async function renderPreview() {
   if (!state.previewOn || !state.source) return;
   /* Local imported HTML is served from the built page instead. A
@@ -1122,6 +1379,17 @@ async function renderPreview() {
       el.preview.contentWindow?.scrollTo(0, scroll);
       const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
       el.preview.contentDocument?.documentElement.setAttribute("data-theme", currentTheme);
+      const anchor = state.pendingAnchor;
+      state.pendingAnchor = "";
+      if (anchor && !anchor.startsWith("^")) {
+        const doc = el.preview.contentDocument;
+        const wanted = anchor.trim().toLowerCase();
+        const headings = [...(doc?.querySelectorAll("h1, h2, h3, h4, h5, h6") || [])];
+        const target = headings.find((heading) => heading.textContent.trim().toLowerCase() === wanted)
+          || doc?.getElementById(slugify(anchor));
+        target?.scrollIntoView({ block: "start" });
+      }
+      initPreviewSync();
     } catch {}
     el.preview.onload = null;
   };
@@ -1645,6 +1913,52 @@ async function removeNote(notePath) {
     toast("Private note deleted");
   } catch (err) {
     showBanner("error", `<strong>Could not delete the note.</strong> ${escapeHtml(err.message)}`);
+  }
+}
+
+/* --- moving between private notes and the local blog --- */
+
+async function moveNoteToLocal(notePath) {
+  const note = state.notes.notes.find((candidate) => candidate.path === notePath);
+  const label = note?.title || notePath;
+  const wasOpen = state.source === "note" && state.meta?.path === notePath;
+  const ok = confirm(
+    `Move “${label}” to the Local blog?\n\n` +
+      "The note, its Markdown and the pictures it links to move into one article folder. " +
+      "It leaves the private notes vault."
+  );
+  if (!ok) return;
+  if (wasOpen && !(await flushDirty())) return;
+
+  try {
+    const data = await postJson("/api/notes/move-to-local", { path: notePath });
+    await refreshList();
+    if (wasOpen) await openPost(data.to.slug, "local");
+    toast(`Moved “${label}” to the Local blog`);
+  } catch (err) {
+    showBanner("error", `<strong>Could not move the note.</strong> ${escapeHtml(err.message)}`);
+  }
+}
+
+async function moveLocalToNote(slug) {
+  const post = state.localPosts.find((candidate) => candidate.slug === slug);
+  const label = post?.title || slug;
+  const wasOpen = state.source === "local" && state.meta?.slug === slug;
+  const ok = confirm(
+    `Move “${label}” to Private notes?\n\n` +
+      "The article folder and its pictures become a private note and its assets folder. " +
+      "It leaves the Local blog."
+  );
+  if (!ok) return;
+  if (wasOpen && !(await flushDirty())) return;
+
+  try {
+    const data = await postJson("/api/posts/move-to-note", { slug });
+    await refreshList();
+    if (wasOpen) await openPost(data.to.path, "note");
+    toast(`Moved “${label}” to Private notes`);
+  } catch (err) {
+    showBanner("error", `<strong>Could not move the post.</strong> ${escapeHtml(err.message)}`);
   }
 }
 
@@ -2481,21 +2795,83 @@ async function createFolderFromModal() {
   }
 }
 
-/* --- Importing files ---------------------------------------- */
+/* --- Importing files and folders ----------------------------- */
 
 const IMPORT_RE = /\.(?:md|markdown|mdx|txt|text)$/i;
+/* A folder may also carry the pictures and files its notes link to. */
+const IMPORT_FOLDER_RE =
+  /\.(?:md|markdown|mdx|txt|text|png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|pdf|mp3|wav|ogg|m4a|flac|aac|mp4|webm|mov|mkv|m4v|zip|json|csv|drawio|excalidraw|canvas)$/i;
 
-function importDestinations() {
+const folderRelPath = (file) =>
+  String(file.webkitRelativePath || file.name || "").replace(/\\/g, "/");
+
+/* Browsers hand a dropped folder over as an entry tree, not as a flat
+   FileList. Walk it so a whole Obsidian vault can be dropped at once. */
+async function entryFile(entry) {
+  return new Promise((resolve, reject) => entry.file(resolve, reject));
+}
+
+async function collectEntry(entry, prefix, out, depth = 0) {
+  if (!entry || depth > 24) return;
+  if (entry.isFile) {
+    try {
+      const file = await entryFile(entry);
+      if (!prefix) {
+        out.push(file);
+      } else {
+        out.push({
+          name: file.name,
+          size: file.size,
+          webkitRelativePath: `${prefix}${file.name}`,
+          arrayBuffer: () => file.arrayBuffer(),
+        });
+      }
+    } catch {}
+    return;
+  }
+  if (!entry.isDirectory) return;
+
+  const nextPrefix = `${prefix}${entry.name}/`;
+  const reader = entry.createReader();
+  for (;;) {
+    let batch = [];
+    try {
+      batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+    } catch {
+      break;
+    }
+    if (!batch.length) break;
+    for (const child of batch) await collectEntry(child, nextPrefix, out, depth + 1);
+  }
+}
+
+async function collectDroppedEntries(entries) {
+  const out = [];
+  for (const entry of entries) await collectEntry(entry, "", out);
+  return out;
+}
+
+function folderEntryOk(file) {
+  if (!IMPORT_FOLDER_RE.test(file.name || "")) return false;
+  const parts = folderRelPath(file).split("/").filter(Boolean);
+  if (!parts.length) return false;
+  if (parts.some((part) => part.startsWith(".") || part === "__MACOSX")) return false;
+  return true;
+}
+
+function importDestinations({ notesOnly = false } = {}) {
   const groups = [`<optgroup label="Private notes">${folderOptions("")}</optgroup>`.replace(/value="([^"]*)"/g, 'value="note:$1"')];
-  groups.push(`<optgroup label="Local blog"><option value="local">Local blog (as draft)</option></optgroup>`);
-  if (state.workspace) {
-    const sections = state.siteSections.length ? state.siteSections : state.workspace.sections || [];
-    if (sections.length) {
-      groups.push(
-        `<optgroup label="GitHub Pages · ${escapeHtml(state.workspace.repoName)}">${sections
-          .map((s) => `<option value="site:${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`)
-          .join("")}</optgroup>`
-      );
+  if (!notesOnly) {
+    groups.push(`<optgroup label="Local blog"><option value="local">Local blog (as draft)</option></optgroup>`);
+    if (state.workspace) {
+      const sections = state.siteSections.length ? state.siteSections : state.workspace.sections || [];
+      if (sections.length) {
+        groups.push(
+          `<optgroup label="GitHub Pages · ${escapeHtml(state.workspace.repoName)}">${sections
+            .map((s) => `<option value="site:${escapeHtml(s.id)}">${escapeHtml(s.name)}</option>`)
+            .join("")}</optgroup>`
+        );
+      }
     }
   }
   return groups.join("");
@@ -2506,22 +2882,34 @@ function importError(message = "") {
   el.importError.hidden = !message;
 }
 
-function openImportModal(files, dest = "note:") {
+function openImportModal(files, dest = "note:", mode = "files") {
   const picked = Array.from(files || []);
   if (!picked.length) return;
+  const folder = mode === "folder";
+  state.importMode = folder ? "folder" : "files";
   state.importFiles = picked;
-  el.importFiles.innerHTML = picked
-    .map((f) => `<li class="${IMPORT_RE.test(f.name) ? "" : "is-bad"}">${escapeHtml(f.name)}${IMPORT_RE.test(f.name) ? "" : " — unsupported type"}</li>`)
-    .join("");
-  el.importDest.innerHTML = importDestinations();
+  const shown = picked.slice(0, 200);
+  const overflow = picked.length - shown.length;
+  el.importFiles.innerHTML =
+    shown
+      .map((f) => {
+        const name = folder ? folderRelPath(f) : f.name;
+        const ok = folder ? folderEntryOk(f) : IMPORT_RE.test(f.name);
+        return `<li class="${ok ? "" : "is-bad"}">${escapeHtml(name)}${ok ? "" : " — skipped"}</li>`;
+      })
+      .join("") + (overflow > 0 ? `<li class="import-more">…and ${overflow} more file${overflow === 1 ? "" : "s"}</li>` : "");
+  el.importModalTitle.textContent = folder ? "Import folder or vault" : "Import files";
+  el.importDest.innerHTML = importDestinations({ notesOnly: folder });
   el.importDest.value = [...el.importDest.options].some((o) => o.value === dest) ? dest : "note:";
   importError("");
   el.importConfirm.disabled = false;
+  el.importConfirm.textContent = "Import";
   el.importModal.hidden = false;
 }
 
 function closeImportModal() {
   el.importModal.hidden = true;
+  el.importConfirm.textContent = "Import";
   state.importFiles = [];
 }
 
@@ -2557,7 +2945,81 @@ async function importFiles(files, dest) {
   return { results, failures };
 }
 
-async function runImport(files, dest) {
+/* A folder is uploaded file by file so the nested layout — notes and their
+   assets/ — arrives in the private vault exactly as it sits on disk. */
+async function importFolderFiles(files, dest) {
+  const [, target = ""] = String(dest).split(/:(.*)/s);
+  const accepted = files.filter(folderEntryOk);
+  const skipped = files.length - accepted.length;
+  const results = [];
+  const failures = [];
+  let sent = 0;
+
+  for (const file of accepted) {
+    sent++;
+    if (sent === 1 || sent % 10 === 0 || sent === accepted.length) {
+      el.importConfirm.textContent = `Importing ${sent}/${accepted.length}…`;
+    }
+    const relPath = folderRelPath(file);
+    const params = new URLSearchParams();
+    if (target) params.set("folder", target);
+    try {
+      results.push(
+        await api(`/api/import/folder?${params}`, {
+          method: "POST",
+          headers: {
+            "x-relpath": encodeURIComponent(relPath),
+            "content-type": "application/octet-stream",
+          },
+          body: await file.arrayBuffer(),
+        })
+      );
+    } catch (err) {
+      failures.push(`${relPath}: ${err.message}`);
+    }
+  }
+
+  /* Open the imported top-level folder in the sidebar. */
+  const topFolder = target
+    ? target
+    : (accepted[0] ? folderRelPath(accepted[0]).split("/")[0] : "");
+  if (topFolder && state.collapsedFolders.has(topFolder)) {
+    state.collapsedFolders.delete(topFolder);
+    persistCollapsed();
+  }
+  if (target) state.collapsedFolders.delete(target);
+  if (results.length) await refreshList();
+  el.importConfirm.textContent = "Import";
+  const unchanged = results.filter((item) => item.reused).length;
+  return {
+    results,
+    failures,
+    skipped,
+    unchanged,
+    imported: accepted.length - failures.length - unchanged,
+  };
+}
+
+async function runImport(files, dest, mode = state.importMode) {
+  if (mode === "folder") {
+    const { results, failures, skipped, imported, unchanged } = await importFolderFiles(files, dest);
+    const notes = results.filter((item) => item.markdown);
+    if (notes.length === 1 && !failures.length) await openPost(notes[0].path, "note");
+    if (!results.length && !failures.length) {
+      failures.push("No Markdown, text, drawing or supported media files were found in that folder or vault.");
+    }
+    if (imported || unchanged) {
+      toast(
+        (imported
+          ? `Imported ${imported} file${imported === 1 ? "" : "s"}`
+          : "Everything from that folder is already in your notes") +
+          (unchanged && imported ? ` · ${unchanged} already present` : "") +
+          (skipped ? ` · ${skipped} skipped` : "")
+      );
+    }
+    return failures;
+  }
+
   const { results, failures } = await importFiles(files, dest);
   if (results.length === 1 && !failures.length) {
     const only = results[0];
@@ -2570,7 +3032,8 @@ async function runImport(files, dest) {
 async function confirmImport() {
   el.importConfirm.disabled = true;
   importError("");
-  const failures = await runImport(state.importFiles, el.importDest.value);
+  const failures = await runImport(state.importFiles, el.importDest.value, state.importMode);
+  el.importConfirm.textContent = "Import";
   if (failures.length) {
     importError(failures.join("\n"));
     el.importConfirm.disabled = false;
@@ -2579,12 +3042,40 @@ async function confirmImport() {
   closeImportModal();
 }
 
+function closeImportMenu() {
+  el.importMenu.hidden = true;
+  el.importBtn.setAttribute("aria-expanded", "false");
+}
+
 function initImport() {
-  el.importBtn.addEventListener("click", () => el.importInput.click());
+  el.importBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = el.importMenu.hidden;
+    el.importMenu.hidden = !open;
+    el.importBtn.setAttribute("aria-expanded", String(open));
+  });
+  el.importFilesChoice.addEventListener("click", () => {
+    closeImportMenu();
+    el.importInput.click();
+  });
+  el.importFolderChoice.addEventListener("click", () => {
+    closeImportMenu();
+    el.importFolderInput.click();
+  });
+  document.addEventListener("click", (event) => {
+    if (!el.importMenu.hidden && !el.importMenu.contains(event.target) && event.target !== el.importBtn) {
+      closeImportMenu();
+    }
+  });
   el.importInput.addEventListener("change", () => {
     const files = el.importInput.files;
-    openImportModal(files);
+    openImportModal(files, "note:", "files");
     el.importInput.value = "";
+  });
+  el.importFolderInput.addEventListener("change", () => {
+    const files = el.importFolderInput.files;
+    openImportModal(files, "note:", "folder");
+    el.importFolderInput.value = "";
   });
   el.importModalClose.addEventListener("click", closeImportModal);
   el.importModalCancel.addEventListener("click", closeImportModal);
@@ -2628,14 +3119,34 @@ function initImport() {
     el.dropVeil.hidden = true;
     const target = event.target instanceof Element ? event.target.closest("[data-drop]") : null;
     setHot(null);
-    const files = Array.from(event.dataTransfer.files);
-    if (!files.length) return;
+    const entries = Array.from(event.dataTransfer.items || [])
+      .map((item) => item.webkitGetAsEntry?.())
+      .filter(Boolean);
+    const files = entries.length ? await collectDroppedEntries(entries) : Array.from(event.dataTransfer.files);
+    if (!files.length) {
+      toast("No files were found in that drop.");
+      return;
+    }
+    const folderDrop = files.some((file) => String(file.webkitRelativePath || "").includes("/"));
+    const drop = target?.dataset.drop || "";
+    const mode = folderDrop && (!drop || drop.startsWith("note:")) ? "folder" : "files";
     if (target) {
-      const failures = await runImport(files, target.dataset.drop);
+      const failures = await runImport(files, drop, mode);
       if (failures.length) toast(failures[0]);
     } else {
-      openImportModal(files);
+      openImportModal(files, "note:", mode);
     }
+  });
+}
+
+function initObsidianPreviewLinks() {
+  window.addEventListener("message", (event) => {
+    if (event.source !== el.preview.contentWindow) return;
+    const data = event.data;
+    if (!data || data.type !== "writing-studio:open-note") return;
+    const target = String(data.path || "");
+    if (!target) return;
+    openPost(target, "note", String(data.anchor || "")).catch((err) => toast(err.message));
   });
 }
 
@@ -3236,6 +3747,7 @@ function initSiteConnect() {
   initSiteConnect();
   initNoteModal();
   initImport();
+  initObsidianPreviewLinks();
   try {
     setRail(localStorage.getItem(RAIL_KEY) !== "1", { persist: false });
   } catch {
@@ -3245,6 +3757,12 @@ function initSiteConnect() {
     const saved = JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]");
     if (Array.isArray(saved)) {
       state.collapsedFolders = new Set(saved.filter((value) => typeof value === "string"));
+    }
+  } catch {}
+  try {
+    const saved = JSON.parse(localStorage.getItem(GROUP_COLLAPSE_KEY) || "[]");
+    if (Array.isArray(saved)) {
+      state.collapsedGroups = new Set(saved.filter((value) => typeof value === "string"));
     }
   } catch {}
 

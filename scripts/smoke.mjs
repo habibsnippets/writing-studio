@@ -14,6 +14,7 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import LZString from "lz-string";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -185,7 +186,7 @@ async function main() {
 
     check(
       "content was written to the chosen data folder",
-      await stat(path.join(dataDir, "content", "smoke-test.md")).then(() => true, () => false)
+      await stat(path.join(dataDir, "content", "smoke-test", "smoke-test.md")).then(() => true, () => false)
     );
     check(
       "dist was written to the chosen data folder",
@@ -199,6 +200,114 @@ async function main() {
     check(
       "notes folder was created in the data folder",
       await stat(path.join(dataDir, "data", "notes")).then(() => true, () => false)
+    );
+
+    /* --- an Obsidian vault imported as a folder --------------- */
+    const vaultName = "Obsidian Vault";
+    const importVaultFile = (relPath, body) =>
+      fetch(base + "/api/import/folder", {
+        method: "POST",
+        headers: {
+          "x-relpath": encodeURIComponent(relPath),
+          "content-type": "application/octet-stream",
+        },
+        body,
+      });
+    const vaultNote = [
+      "# Topic",
+      "",
+      "![[pic.png|320]]",
+      "",
+      "[[Other|the other note]]",
+      "",
+      "![[Other]]",
+      "",
+      "> [!warning] Careful",
+      "> A & B",
+      "",
+      "![[drawing.canvas]]",
+      "",
+      "![[sketch.excalidraw]]",
+      "",
+      "![[compressed.excalidraw]]",
+      "",
+    ].join("\n");
+    await importVaultFile(`${vaultName}/Other.md`, "# Other\n\nTranscluded **body**.\n");
+    await importVaultFile(`${vaultName}/Agentic AI/1.md`, "What is an agent\n");
+    await importVaultFile(`${vaultName}/Topic/Topic.md`, vaultNote);
+    await importVaultFile(`${vaultName}/Topic/pic.png`, Buffer.from("png"));
+    const reimport = await importVaultFile(`${vaultName}/Topic/Topic.md`, vaultNote);
+    const reimported = await reimport.json();
+    check(
+      "importing the same vault twice reuses the existing note",
+      reimport.status === 200 && reimported.reused === true && reimported.path === `${vaultName}/Topic/Topic.md`,
+      JSON.stringify(reimported)
+    );
+    const canvasImport = await importVaultFile(
+      `${vaultName}/Topic/drawing.canvas`,
+      JSON.stringify({
+        nodes: [
+          { id: "a", type: "text", text: "Canvas **text**", x: 0, y: 0, width: 260, height: 100 },
+          { id: "b", type: "file", file: "pic.png", x: 340, y: 0, width: 240, height: 140 },
+        ],
+        edges: [{ id: "e", fromNode: "a", fromSide: "right", toNode: "b", toSide: "left", toEnd: "arrow" }],
+      })
+    );
+    check("a folder import accepts an Obsidian Canvas", canvasImport.status === 200, `status ${canvasImport.status}`);
+    const drawingImport = await importVaultFile(
+      `${vaultName}/Topic/sketch.excalidraw`,
+      JSON.stringify({
+        type: "excalidraw",
+        elements: [{ id: "t", type: "text", x: 0, y: 0, width: 160, height: 24, text: "Obsidian sketch", fontSize: 20, strokeColor: "#111111" }],
+        files: {},
+      })
+    );
+    check("a folder import accepts an Excalidraw drawing", drawingImport.status === 200, `status ${drawingImport.status}`);
+    const compressedScene = {
+      type: "excalidraw",
+      elements: [{ id: "c", type: "ellipse", x: 0, y: 0, width: 100, height: 60, strokeColor: "#1971c2", backgroundColor: "transparent", strokeWidth: 2, opacity: 100 }],
+      files: {},
+    };
+    await importVaultFile(
+      `${vaultName}/Topic/compressed.excalidraw.md`,
+      `---\nexcalidraw-plugin: parsed\n---\n\n# Excalidraw Data\n\n## Drawing\n\n\`\`\`compressed-json\n${LZString.compressToBase64(JSON.stringify(compressedScene))}\n\`\`\`\n`
+    );
+    const vaultPreview = await (
+      await fetch(base + "/api/notes/preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: `${vaultName}/Topic/Topic.md`, title: "Topic", markdown: vaultNote }),
+      })
+    ).json();
+    const vaultHtml = vaultPreview.html || "";
+    check(
+      "Obsidian images and note links render",
+      vaultHtml.includes("/note-assets/Obsidian%20Vault/Topic/pic.png") &&
+        vaultHtml.includes('data-note-link="Obsidian Vault/Other.md"') &&
+        vaultHtml.includes("width:320px"),
+      vaultPreview.error
+    );
+    check("Obsidian note transclusion renders", vaultHtml.includes("Transcluded <strong>body</strong>"), vaultPreview.error);
+    const vaultImage = await fetch(base + "/note-assets/Obsidian%20Vault/Topic/pic.png");
+    check("Obsidian attachments with spaces in the folder path are served", vaultImage.status === 200, `status ${vaultImage.status}`);
+    check("Obsidian callouts render", vaultHtml.includes("callout-warning"), vaultPreview.error);
+    check("Obsidian Canvas renders in a note", vaultHtml.includes("obsidian-canvas-node") && vaultHtml.includes("canvas-edge"), vaultPreview.error);
+    check(
+      "Excalidraw drawings render, including compressed .excalidraw.md",
+      (vaultHtml.match(/obsidian-excalidraw/g) || []).length >= 2,
+      vaultPreview.error
+    );
+    const vaultTree = await (await fetch(base + "/api/notes/tree")).json();
+    check(
+      "Excalidraw payloads are not listed as prose notes",
+      !(vaultTree.notes || []).some((note) => note.path.endsWith(".excalidraw.md")),
+      JSON.stringify((vaultTree.notes || []).map((note) => note.path))
+    );
+    const numberedNote = (vaultTree.notes || []).find((note) => note.path === `${vaultName}/Agentic AI/1.md`);
+    check(
+      "a vault note without a heading is titled from its filename",
+      numberedNote?.title === "1",
+      numberedNote?.title
     );
 
     /* --- a local GitHub Pages repository --------------------- */

@@ -2316,3 +2316,295 @@ html.is-theming *::after {
   [data-reveal] { opacity: 1; transform: none; }
   #viz { display: none; }
 }
+
+/* ── Obsidian vault rendering ──────────────────────────────── */
+/* Imported vaults keep Obsidian's links, embeds, callouts and
+   drawings. These styles are scoped to the article prose so the
+   rest of the site is untouched. */
+
+.prose .obsidian-link {
+  color: var(--sky);
+  border-bottom: 1px solid color-mix(in srgb, var(--sky) 40%, transparent);
+}
+.prose .obsidian-link:hover { border-bottom-color: var(--sky); }
+.prose .obsidian-note-link { font-weight: 500; }
+.prose .obsidian-file { overflow-wrap: anywhere; }
+
+.prose .obsidian-missing {
+  display: inline;
+  padding: 1px 5px;
+  border: 1px dashed var(--line-hi);
+  border-radius: 5px;
+  background: var(--wash);
+  color: var(--fg-faint);
+  font-family: var(--mono);
+  font-size: 0.78em;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.prose .obsidian-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--sky) 26%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sky) 9%, transparent);
+  color: var(--sky);
+  font-family: var(--mono);
+  font-size: 0.76em;
+  line-height: 1.45;
+  vertical-align: 1px;
+}
+.prose .obsidian-tag::first-letter { color: var(--sky); }
+
+.prose .obsidian-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.6em auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--wash);
+}
+
+.prose .obsidian-embed { margin: 1.6em 0; }
+.prose .obsidian-note-embed {
+  padding: 2px 0 2px 18px;
+  border-left: 2px solid var(--line-hi);
+}
+.prose .obsidian-note-embed > :first-child { margin-top: 0; }
+.prose .obsidian-note-embed > :last-child { margin-bottom: 0; }
+
+.prose .obsidian-pdf iframe {
+  width: 100%;
+  min-height: 62vh;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--wash);
+}
+.prose .obsidian-pdf > a {
+  display: inline-block;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--fg-dim);
+}
+.prose .obsidian-media {
+  display: block;
+  width: 100%;
+  margin: 1.5em 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #000;
+}
+
+/* Obsidian callouts arrive as blockquotes with a `[!type]` marker. */
+.prose blockquote.callout {
+  --callout-color: var(--sky);
+  margin: 1.8em 0;
+  padding: 13px 16px 13px 18px;
+  border-left: 3px solid var(--callout-color);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--callout-color) 8%, var(--wash-soft));
+  font-style: normal;
+  color: var(--fg-dim);
+}
+.prose .callout .callout-title {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--callout-color);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.prose .callout p { margin-bottom: 0.55em; }
+.prose .callout p:last-child { margin-bottom: 0; }
+.prose .callout-warning,
+.prose .callout-caution,
+.prose .callout-attention { --callout-color: var(--amber); }
+.prose .callout-danger,
+.prose .callout-error,
+.prose .callout-failure,
+.prose .callout-fail,
+.prose .callout-missing,
+.prose .callout-bug { --callout-color: #e16b6b; }
+.prose .callout-success,
+.prose .callout-check,
+.prose .callout-done { --callout-color: var(--teal); }
+.prose .callout-tip,
+.prose .callout-hint,
+.prose .callout-important { --callout-color: var(--violet); }
+.prose .callout-quote,
+.prose .callout-cite { --callout-color: var(--fg-faint); }
+.prose .callout-example { --callout-color: var(--violet); }
+
+/* ── Obsidian Canvas ──────────────────────────────────────── */
+.prose .obsidian-canvas {
+  max-height: 72vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-soft);
+  -webkit-overflow-scrolling: touch;
+}
+.prose .obsidian-canvas-stage {
+  position: relative;
+  margin: 0 auto;
+  background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+.prose .obsidian-canvas-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: visible;
+  color: var(--fg-faint);
+  pointer-events: none;
+}
+.prose .canvas-edge {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  opacity: 0.8;
+}
+.prose .canvas-edge-label {
+  fill: var(--fg-dim);
+  stroke: var(--bg-soft);
+  stroke-width: 4px;
+  paint-order: stroke;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.prose .obsidian-canvas-node {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid var(--line-hi);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--fg-dim);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.prose .obsidian-canvas-node.canvas-group {
+  z-index: 0;
+  display: block;
+  padding: 12px 14px;
+  border-style: dashed;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.prose .canvas-group-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.prose .canvas-text {
+  overflow: hidden;
+  min-height: 0;
+  font-size: 14px;
+}
+.prose .canvas-text > :first-child { margin-top: 0; }
+.prose .canvas-text > :last-child { margin-bottom: 0; }
+.prose .canvas-text p { margin-bottom: 0.55em; }
+.prose .canvas-text h1,
+.prose .canvas-text h2,
+.prose .canvas-text h3,
+.prose .canvas-text h4 {
+  margin: 0.2em 0 0.35em;
+  font-size: 1.05em;
+  letter-spacing: -0.01em;
+}
+.prose .canvas-text ul,
+.prose .canvas-text ol { margin-bottom: 0.55em; }
+.prose .obsidian-canvas-image {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 5px;
+  object-fit: contain;
+  background: transparent;
+}
+.prose .obsidian-canvas-file,
+.prose .obsidian-canvas-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fg);
+  border: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.prose .obsidian-canvas-link { flex-direction: column; align-items: flex-start; gap: 2px; }
+.prose .obsidian-canvas-link small {
+  width: 100%;
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prose .obsidian-canvas-file-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.prose .obsidian-canvas-missing,
+.prose .obsidian-canvas-empty {
+  color: var(--fg-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.prose .obsidian-canvas-node.is-red { --canvas-color: #e93147; }
+.prose .obsidian-canvas-node.is-orange { --canvas-color: #ec7500; }
+.prose .obsidian-canvas-node.is-yellow { --canvas-color: #e0ac00; }
+.prose .obsidian-canvas-node.is-green { --canvas-color: #08b94e; }
+.prose .obsidian-canvas-node.is-cyan { --canvas-color: #00bfbc; }
+.prose .obsidian-canvas-node.is-violet { --canvas-color: #7852ee; }
+.prose .obsidian-canvas-node[class*=" is-"] {
+  border-color: color-mix(in srgb, var(--canvas-color) 55%, var(--line));
+  background: color-mix(in srgb, var(--canvas-color) 8%, var(--panel));
+}
+.prose .obsidian-canvas-node.canvas-group[class*=" is-"] {
+  background: color-mix(in srgb, var(--canvas-color) 13%, transparent);
+}
+
+/* ── Excalidraw drawings ──────────────────────────────────── */
+.prose .obsidian-drawing {
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.prose .obsidian-excalidraw {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 72vh;
+  color: var(--fg-faint);
+}
+.prose .obsidian-excalidraw text { white-space: pre; }
+.prose .canvas-edge.canvas-edge-1 { stroke: #e93147; }
+.prose .canvas-edge.canvas-edge-2 { stroke: #ec7500; }
+.prose .canvas-edge.canvas-edge-3 { stroke: #e0ac00; }
+.prose .canvas-edge.canvas-edge-4 { stroke: #08b94e; }
+.prose .canvas-edge.canvas-edge-5 { stroke: #00bfbc; }
+.prose .canvas-edge.canvas-edge-6 { stroke: #7852ee; }

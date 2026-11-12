@@ -12,11 +12,12 @@ import http from "node:http";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readFile, writeFile, mkdir, unlink, rm, stat, readdir, copyFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, stat, readdir, copyFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import { renderMarkdown, readingMinutes, countHtmlWords, rewriteHtmlAssets, htmlFragment } from "./lib/md.mjs";
+import { buildVaultIndex } from "./lib/obsidian.mjs";
 import { page } from "./lib/post-page.mjs";
 import { normalizeDate } from "./lib/frontmatter.mjs";
 import { buildSite } from "./lib/builder.mjs";
@@ -35,16 +36,31 @@ import {
 } from "./lib/site-workspace.mjs";
 import { archiveAndRemoveSitePost } from "./lib/site-archive.mjs";
 import {
+  ensureLocalPostDir,
+  findLocalBody,
+  localAssetsDir,
+  localPostDir,
+  migrateLocalLibrary,
+  readLocalPosts,
+  removeLocalPostFiles,
+  resolveLocalAsset,
+  writeLocalPosts,
+} from "./lib/local-blog.mjs";
+import { moveLocalToNote, moveNoteToLocal } from "./lib/transfer.mjs";
+import {
   listNotes,
   getNote,
   createNote,
   importNote,
+  importFolderFile,
   parseImport,
   saveNote,
   deleteNote,
   createFolder,
   deleteFolder,
   uploadNoteAsset,
+  migrateNoteAssets,
+  migrateEmbeddedNoteImages,
   noteAssetBase,
   resolveNoteAsset,
 } from "./lib/notes.mjs";
@@ -109,7 +125,9 @@ try {
 /* CON, NUL and friends are filenames on Windows, not files. */
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
 const slugOk = (s) =>
-  /^[a-z0-9][a-z0-9-]{0,80}$/.test(s || "") && !WINDOWS_RESERVED.test(s || "");
+  /^[a-z0-9][a-z0-9-]{0,80}$/.test(s || "") &&
+  s !== "assets" &&
+  !WINDOWS_RESERVED.test(s || "");
 /* stat rather than access: the desktop build serves the app from inside
    app.asar, where Electron implements stat() for folders but answers
    access() with ENOENT. With access(), the starter content in
@@ -117,16 +135,11 @@ const slugOk = (s) =>
 const exists = (p) => stat(p).then(() => true, () => false);
 
 async function readPosts() {
-  try {
-    return JSON.parse(await readFile(POSTS_FILE, "utf8"));
-  } catch {
-    return [];
-  }
+  return readLocalPosts();
 }
 
 async function writePosts(posts) {
-  await mkdir(CONTENT, { recursive: true });
-  await writeFile(POSTS_FILE, JSON.stringify(posts, null, 2) + "\n");
+  return writeLocalPosts(posts);
 }
 
 /* A fresh clone has no content/ or data/ folders: both are gitignored
@@ -135,13 +148,15 @@ async function writePosts(posts) {
 async function ensureLocalStore() {
   await mkdir(CONTENT, { recursive: true });
   await mkdir(ASSETS_DIR, { recursive: true });
-  await mkdir(path.join(NOTES_ROOT, ".assets"), { recursive: true });
+  await mkdir(NOTES_ROOT, { recursive: true });
 
   if (await exists(POSTS_FILE)) return;
 
   const entries = await readdir(CONTENT, { withFileTypes: true }).catch(() => []);
   const hasPosts = entries.some(
-    (entry) => entry.isFile() && /\.(?:md|markdown|mdx|html?)$/i.test(entry.name)
+    (entry) =>
+      (entry.isFile() && /\.(?:md|markdown|mdx|html?)$/i.test(entry.name)) ||
+      (entry.isDirectory() && entry.name !== "assets" && !entry.name.startsWith("."))
   );
 
   /* If posts already exist, never replace them with seed content. */
@@ -172,11 +187,7 @@ function sortPosts(posts) {
 }
 
 async function bodyPath(slug) {
-  for (const ext of [".md", ".html"]) {
-    const p = path.join(CONTENT, slug + ext);
-    if (await exists(p)) return p;
-  }
-  return null;
+  return findLocalBody(slug);
 }
 
 function autoDescription(markdown, max = 180) {
@@ -287,20 +298,20 @@ async function savePost(meta, markdown) {
   if (!slugOk(meta.slug)) {
     throw Object.assign(new Error("Slug must contain lowercase letters, numbers, and dashes only"), { code: 400 });
   }
-  if (await exists(path.join(CONTENT, `${meta.slug}.html`))) {
+  const existing = await findLocalBody(meta.slug);
+  if (existing && /\.html$/i.test(existing)) {
     throw Object.assign(
       new Error("HTML posts are read-only in the studio. Edit the .html file directly in your editor."),
       { code: 400 }
     );
   }
 
-  await mkdir(CONTENT, { recursive: true });
   const posts = await readPosts();
   const i = posts.findIndex((p) => p.slug === meta.slug);
   const previous = i >= 0 ? posts[i] : null;
 
   const text = String(markdown ?? "");
-  const words = renderMarkdown(text, { slug: meta.slug }).words;
+  const words = (await renderMarkdown(text, { slug: meta.slug })).words;
   const today = new Date().toISOString().slice(0, 10);
 
   const entry = {
@@ -318,11 +329,12 @@ async function savePost(meta, markdown) {
     pinned: meta.pinned === undefined ? !!previous?.pinned : !!meta.pinned,
   };
 
-  if (i < 0 && (await bodyPath(meta.slug))) {
+  if (i < 0 && existing) {
     throw Object.assign(new Error(`"${meta.slug}" already belongs to another post — choose a different slug`), { code: 409 });
   }
 
-  await writeFile(path.join(CONTENT, `${meta.slug}.md`), text);
+  await ensureLocalPostDir(meta.slug);
+  await writeFile(path.join(localPostDir(meta.slug), `${meta.slug}.md`), text);
   if (i >= 0) posts[i] = entry;
   else posts.push(entry);
   sortPosts(posts);
@@ -454,7 +466,7 @@ async function api(req, res, url) {
         body = rewriteHtmlAssets(String(legacyHtml), assetInfo.assetRootPrefix);
         words = countHtmlWords(body);
       } else {
-        const out = renderMarkdown(String(markdown), {
+        const out = await renderMarkdown(String(markdown), {
           slug: meta.slug || "",
           assetBase: assetInfo.assetBase,
           assetRootPrefix: assetInfo.assetRootPrefix,
@@ -543,6 +555,26 @@ async function api(req, res, url) {
     }
   }
 
+  /* Move a note into the local blog, or bring a local post back into the
+     private vault. Both directions copy the body and its media first. */
+  if (req.method === "POST" && route === "notes/move-to-local") {
+    try {
+      const { path: notePath } = await json(req);
+      return send(res, 200, await moveNoteToLocal(notePath));
+    } catch (err) {
+      return send(res, err.code || 500, { error: err.message });
+    }
+  }
+
+  if (req.method === "POST" && route === "posts/move-to-note") {
+    try {
+      const { slug, folder = "" } = await json(req);
+      return send(res, 200, await moveLocalToNote(slug, folder));
+    } catch (err) {
+      return send(res, err.code || 500, { error: err.message });
+    }
+  }
+
   if (req.method === "POST" && route === "notes/folder") {
     try {
       const { parent = "", name = "" } = await json(req);
@@ -565,7 +597,13 @@ async function api(req, res, url) {
     try {
       const { path: notePath = "", title = "", markdown = "" } = await json(req);
       const assetBase = notePath ? noteAssetBase(notePath) : "";
-      const out = renderMarkdown(String(markdown), { assetBase });
+      const usesVault = notePath && /!?\[\[|\[!|==|%%|(^|\s)#[\p{L}\p{N}_/-]+/mu.test(String(markdown));
+      const vault = usesVault ? await buildVaultIndex(NOTES_ROOT) : null;
+      const out = await renderMarkdown(String(markdown), {
+        assetBase,
+        notePath,
+        obsidian: vault ? { index: vault, notePath, assetBaseFor: noteAssetBase } : undefined,
+      });
       const words = out.words;
       const dateISO = new Date().toISOString().slice(0, 10);
       const post = {
@@ -630,6 +668,23 @@ async function api(req, res, url) {
         return send(res, 200, { kind, id: saved.id, title: saved.title });
       }
       return send(res, 400, { error: "Unknown import destination" });
+    } catch (err) {
+      return send(res, err.code || 500, { error: err.message });
+    }
+  }
+
+  /* A whole folder arrives one file at a time. The relative path keeps the
+     directory shape and the assets that sit beside each note. */
+  if (req.method === "POST" && route === "import/folder") {
+    try {
+      const relPath = decodeURIComponent(req.headers["x-relpath"] || "");
+      const bytes = await body(req, 25 * 1024 * 1024);
+      const file = await importFolderFile({
+        folder: url.searchParams.get("folder") || "",
+        relPath,
+        bytes,
+      });
+      return send(res, 200, { kind: "note", ...file });
     } catch (err) {
       return send(res, err.code || 500, { error: err.message });
     }
@@ -717,7 +772,7 @@ async function api(req, res, url) {
     /* Windows refuses to create CON.png, NUL.png and the like. */
     if (WINDOWS_RESERVED.test(base)) base += "-file";
 
-    const dir = path.join(ASSETS_DIR, slug);
+    const dir = localAssetsDir(slug);
     await mkdir(dir, { recursive: true });
 
     let file = path.join(dir, base + ext);
@@ -727,14 +782,15 @@ async function api(req, res, url) {
     if (!bytes.length) return send(res, 400, { error: "Empty file" });
     await writeFile(file, bytes);
 
-    const rel = `/assets/writing/${slug}/${path.basename(file)}`;
+    /* Relative to the article, so the whole topic folder stays portable. */
+    const rel = `assets/${path.basename(file)}`;
     return send(res, 200, { path: rel, name: path.basename(file), bytes: bytes.length });
   }
 
   if (req.method === "POST" && route === "preview") {
     const { meta = {}, markdown = "" } = await json(req);
     const slug = slugOk(meta.slug) ? meta.slug : "draft";
-    const out = renderMarkdown(String(markdown), { slug });
+    const out = await renderMarkdown(String(markdown), { slug });
     const words = out.words;
     const post = {
       slug: meta.slug || "draft",
@@ -785,8 +841,7 @@ async function api(req, res, url) {
     const posts = (await readPosts()).filter((p) => p.slug !== slug);
     await writePosts(posts);
 
-    for (const ext of [".md", ".html"]) await unlink(path.join(CONTENT, slug + ext)).catch(() => {});
-    await rm(path.join(ASSETS_DIR, slug), { recursive: true, force: true });
+    await removeLocalPostFiles(slug);
     await rm(path.join(DIST, slug), { recursive: true, force: true });
 
     const buildResult = await buildSite();
@@ -933,7 +988,7 @@ async function api(req, res, url) {
   /* Markdown + maths -> safe HTML, used to turn pasted equations into canvas images */
   if (route === "ai/render" && req.method === "POST") {
     const { text = "" } = await json(req);
-    const out = renderMarkdown(String(text).slice(0, 20000), { escapeHtml: true, assetBase: "" });
+    const out = await renderMarkdown(String(text).slice(0, 20000), { escapeHtml: true, assetBase: "" });
     return send(res, 200, { ok: true, html: out.html });
   }
 
@@ -955,7 +1010,7 @@ async function api(req, res, url) {
         result = await callAiProvider({ ...payload, imageBase64: null });
       }
       /* Rendered here so $…$ maths becomes real KaTeX markup, not raw dollars */
-      const html = renderMarkdown(String(result.explanation || ""), { escapeHtml: true, assetBase: "" }).html;
+      const html = (await renderMarkdown(String(result.explanation || ""), { escapeHtml: true, assetBase: "" })).html;
       return send(res, 200, { ok: true, explanation: result.explanation, html, model: result.model });
     } catch (err) {
       return send(res, 400, { ok: false, error: err.message });
@@ -1213,22 +1268,26 @@ async function serveStatic(res, url) {
     return serveFile(res, target);
   }
 
-  // 4b. Private note images. These live under data/notes/.assets and
-  // are never part of content/, dist/, or a connected Pages repo.
+  // 4b. Private note media. These live beside the note, in its folder's
+  // assets/ directory (or the old data/notes/.assets tree), and are never
+  // part of content/, dist/, or a connected Pages repo.
   if (pathname.startsWith("/note-assets/")) {
-    const target = resolveNoteAsset(pathname.slice("/note-assets/".length));
+    const target = await resolveNoteAsset(pathname.slice("/note-assets/".length));
     if (!target) return send(res, 404, { error: "Asset not found" });
     return serveFile(res, target);
   }
 
-  // 5. Post assets / diagrams (/assets/writing/<slug>/<file> or /content/assets/...)
-  const mediaMatch = pathname.match(/^\/(?:assets\/writing|assets|content\/assets)\/([a-z0-9-]+)\/([^/]+)$/i);
+  // 5. Post assets / diagrams (/assets/writing/<slug>/<file>, including
+  //    the article's own assets/ subfolder, or /content/assets/...)
+  const mediaMatch = pathname.match(/^\/(?:assets\/writing|assets|content\/assets)\/([a-z0-9-]+)\/(.+)$/i);
   if (mediaMatch) {
-    const [, slug, filename] = mediaMatch;
-    const mediaFile = path.join(ASSETS_DIR, slug, filename);
-    if (await exists(mediaFile)) {
-      return serveFile(res, mediaFile);
-    }
+    const [, slug, relative] = mediaMatch;
+    let decoded = relative;
+    try {
+      decoded = decodeURIComponent(relative);
+    } catch {}
+    const mediaFile = await resolveLocalAsset(slug, decoded);
+    if (mediaFile) return serveFile(res, mediaFile);
   }
 
   // 6. Published posts and archive (/writing/ or /writing/<slug>/ or /posts/<slug>/)
@@ -1252,7 +1311,7 @@ async function serveStatic(res, url) {
         const html = page(meta, htmlFragment(raw), null, null, {});
         return send(res, 200, html, "text/html; charset=utf-8");
       }
-      const out = renderMarkdown(raw, { slug });
+      const out = await renderMarkdown(raw, { slug });
       const html = page(meta, out.html, null, null, { hasMath: out.hasMath });
       return send(res, 200, html, "text/html; charset=utf-8");
     }
@@ -1285,6 +1344,11 @@ async function sameStudioOn(port) {
 export async function startServer(port = DEFAULT_PORT, attempts = 10) {
   try {
     await ensureLocalStore();
+    /* Upgrade older loose-file libraries and the hidden note asset tree
+       into the folder-per-topic layout. Both passes are idempotent. */
+    await migrateLocalLibrary();
+    await migrateNoteAssets();
+    await migrateEmbeddedNoteImages();
   } catch (err) {
     console.error(`Could not prepare the local writing folders: ${err.message}`);
     process.exit(1);

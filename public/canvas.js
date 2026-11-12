@@ -707,9 +707,11 @@ function blankElement(type, x, y, w = 0, h = 0, style = {}) {
     /* New arrows end in an arrowhead; new lines stay plain until one is
        picked in the Ends row. */
     el.startArrowhead = ARROWHEADS.includes(style.startArrowhead) ? style.startArrowhead : "none";
-    el.endArrowhead = ARROWHEADS.includes(style.endArrowhead)
-      ? style.endArrowhead
-      : type === "arrow" ? "arrow" : "none";
+    const defaultEnd = type === "arrow" ? "arrow" : "none";
+    el.endArrowhead =
+      ARROWHEADS.includes(style.endArrowhead) && (type === "arrow" || style.endArrowheadTouched)
+        ? style.endArrowhead
+        : defaultEnd;
     el.startBinding = null;
     el.endBinding = null;
   }
@@ -817,6 +819,9 @@ export function mountCanvas(opts = {}) {
       curve: false,
       startArrowhead: "none",
       endArrowhead: "arrow",
+      /* The default above belongs to the arrow tool. A plain line stays
+         plain until an End mark is picked in the style panel. */
+      endArrowheadTouched: false,
       strokeWidth: 2,
       strokeStyle: "solid",
       opacity: 1,
@@ -4738,7 +4743,10 @@ export function mountCanvas(opts = {}) {
 
   function syncStyleUI() {
     const item = firstSelected();
-    const s = item || state.style;
+    const idle = state.tool === "line" && !state.style.endArrowheadTouched
+      ? { ...state.style, endArrowhead: "none" }
+      : state.style;
+    const s = item || idle;
     const fillStyle = s.fillStyle || "none";
     const fill = s.fill || state.style.fill;
     const stroke = s.stroke || state.style.stroke;
@@ -4868,7 +4876,12 @@ export function mountCanvas(opts = {}) {
     });
     for (const [container, key] of [[el.startHeads, "startArrowhead"], [el.endHeads, "endArrowhead"]]) {
       container.querySelectorAll("button").forEach((b) => {
-        b.addEventListener("click", () => applyStyle({ [key]: b.dataset.head }));
+        b.addEventListener("click", () => {
+          /* Remember that the End mark was chosen on purpose, so the line
+             tool stops inheriting the arrow default. */
+          if (key === "endArrowhead") state.style.endArrowheadTouched = true;
+          applyStyle({ [key]: b.dataset.head });
+        });
       });
     }
     el.edgeStyles.querySelectorAll("button").forEach((b) => {
