@@ -92,7 +92,7 @@ function safeUrl(raw) {
 
 /* --- markdown ----------------------------------------------- */
 
-function inlineMd(raw) {
+function inlineMd(raw, imageUrl = (url) => url) {
   const codes = [];
   let text = escapeHtml(raw).replace(/`([^`]+)`/g, (_, code) => {
     codes.push(code);
@@ -100,7 +100,7 @@ function inlineMd(raw) {
   });
 
   text = text.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g,
-    (_, alt, url) => `<img src="${safeUrl(url)}" alt="${escapeHtml(alt)}">`);
+    (_, alt, url) => `<img src="${safeUrl(imageUrl(url))}" alt="${escapeHtml(alt)}">`);
   text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g,
     (_, label, url) => `<a href="${safeUrl(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
   text = text.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
@@ -120,7 +120,7 @@ function splitRow(line) {
   return line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((cell) => cell.trim());
 }
 
-function renderMarkdown(source) {
+function renderMarkdown(source, imageUrl = (url) => url) {
   const lines = String(source || "").replace(/\r\n?/g, "\n").split("\n");
   const out = [];
   let i = 0;
@@ -143,7 +143,7 @@ function renderMarkdown(source) {
     const heading = line.match(/^\s*(#{1,6})\s+(.*)$/);
     if (heading) {
       const level = heading[1].length;
-      out.push(`<h${level}>${inlineMd(heading[2].replace(/\s+#+\s*$/, ""))}</h${level}>`);
+      out.push(`<h${level}>${inlineMd(heading[2].replace(/\s+#+\s*$/, ""), imageUrl)}</h${level}>`);
       i += 1;
       continue;
     }
@@ -160,7 +160,7 @@ function renderMarkdown(source) {
         quote.push(lines[i].replace(/^\s*>\s?/, ""));
         i += 1;
       }
-      out.push(`<blockquote>${renderMarkdown(quote.join("\n"))}</blockquote>`);
+      out.push(`<blockquote>${renderMarkdown(quote.join("\n"), imageUrl)}</blockquote>`);
       continue;
     }
 
@@ -174,8 +174,8 @@ function renderMarkdown(source) {
         i += 1;
       }
       out.push(
-        `<table><thead><tr>${head.map((cell) => `<th>${inlineMd(cell)}</th>`).join("")}</tr></thead>` +
-        `<tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${inlineMd(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
+        `<table><thead><tr>${head.map((cell) => `<th>${inlineMd(cell, imageUrl)}</th>`).join("")}</tr></thead>` +
+        `<tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${inlineMd(cell, imageUrl)}</td>`).join("")}</tr>`).join("")}</tbody></table>`
       );
       continue;
     }
@@ -186,7 +186,7 @@ function renderMarkdown(source) {
       while (i < lines.length) {
         const match = ordered ? lines[i].match(LIST_OL) : lines[i].match(LIST_UL);
         if (!match) break;
-        items.push(inlineMd(ordered ? match[2] : match[1]));
+        items.push(inlineMd(ordered ? match[2] : match[1], imageUrl));
         i += 1;
       }
       const tag = ordered ? "ol" : "ul";
@@ -199,7 +199,7 @@ function renderMarkdown(source) {
       paragraph.push(lines[i]);
       i += 1;
     }
-    out.push(`<p>${paragraph.map(inlineMd).join("<br>")}</p>`);
+    out.push(`<p>${paragraph.map((line) => inlineMd(line, imageUrl)).join("<br>")}</p>`);
   }
 
   return out.join("");
@@ -212,7 +212,7 @@ function titleOf(note) {
   if (explicit) return explicit;
   const firstLine = note.body
     .split("\n")
-    .map((line) => line.replace(/^\s{0,3}#{1,6}\s+/, "").trim())
+    .map((line) => line.replace(/^\s{0,3}#{1,6}\s+/, "").replace(/!\[[^\]]*\]\([^)\s]*\)/g, "").trim())
     .find(Boolean);
   if (!firstLine) return "Untitled note";
   return firstLine.length > 60 ? `${firstLine.slice(0, 60).trim()}…` : firstLine;
@@ -324,9 +324,21 @@ function renderList() {
   document.title = `${titleOf(activeNote())} — Writing Studio online`;
 }
 
+/* Pasted diagrams live in the tab as data URLs, but the note body keeps a
+   short token so the textarea stays readable. */
+const IMAGE_TOKEN = /^note-image-(\d+)\.png$/;
+
+function imageResolver(note) {
+  return (url) => {
+    const match = IMAGE_TOKEN.exec(url);
+    const stored = match ? note.images?.[Number(match[1]) - 1] : null;
+    return stored || url;
+  };
+}
+
 function renderPreview() {
   const note = activeNote();
-  const html = note ? renderMarkdown(note.body) : "";
+  const html = note ? renderMarkdown(note.body, imageResolver(note)) : "";
   preview.innerHTML = html;
 }
 
@@ -454,6 +466,51 @@ noteBody.addEventListener("input", () => {
   renderList();
 });
 
+/* The write pane is a plain textarea, so a browser drops an image on paste.
+   Keep the exported PNG in this tab as a data URL and embed it in the note. */
+function imageFromClipboard(data) {
+  for (const item of Array.from(data?.items || [])) {
+    if (item.kind === "file" && item.type.startsWith("image/")) return item.getAsFile();
+  }
+  return Array.from(data?.files || []).find((file) => file.type.startsWith("image/")) || null;
+}
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read the pasted image"));
+    reader.readAsDataURL(file);
+  });
+}
+
+noteBody.addEventListener("paste", async (event) => {
+  const note = activeNote();
+  if (!note) return;
+  const file = imageFromClipboard(event.clipboardData);
+  if (!file) return;
+
+  event.preventDefault();
+  const start = noteBody.selectionStart;
+  const end = noteBody.selectionEnd;
+  const before = noteBody.value.slice(0, start);
+  const lead = !before ? "" : before.endsWith("\n\n") ? "" : before.endsWith("\n") ? "\n" : "\n\n";
+
+  try {
+    const url = await readAsDataUrl(file);
+    if (activeNote() !== note) return;
+    note.images = note.images || [];
+    note.images.push(url);
+    const token = `note-image-${note.images.length}.png`;
+    noteBody.setRangeText(`${lead}![diagram](${token})\n\n`, start, end, "end");
+    noteBody.dispatchEvent(new Event("input", { bubbles: true }));
+    noteBody.focus();
+    toast("Diagram embedded in the note · kept in this tab");
+  } catch (err) {
+    toast(err.message || "Could not paste the image");
+  }
+});
+
 modeTabs.addEventListener("click", (event) => {
   const tab = event.target.closest(".mode-tab");
   if (!tab) return;
@@ -467,7 +524,12 @@ downloadBtn.addEventListener("click", () => {
   const note = activeNote();
   if (!note) return;
   const heading = note.title.trim();
-  const body = note.body;
+  /* The saved file has to stand on its own, so tokens become data URLs. */
+  const resolve = imageResolver(note);
+  const body = note.body.replace(/!\[([^\]]*)\]\((note-image-\d+\.png)\)/g, (match, alt, token) => {
+    const stored = resolve(token);
+    return stored === token ? match : `![${alt}](${stored})`;
+  });
   const text = heading && !new RegExp(`^#\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m").test(body)
     ? `# ${heading}\n\n${body}`
     : body;
