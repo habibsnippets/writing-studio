@@ -185,17 +185,52 @@ code, pre {
   opacity: 0.6;
 }
 
+/* ── Call to action ────────────────────────────────────────── */
+.cta-row {
+  margin-top: 26px;
+}
+
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: transform 0.35s var(--ease), box-shadow 0.3s var(--ease);
+}
+
+.cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 30px -24px rgba(34, 28, 17, 0.85);
+}
+
+.cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.cta svg { flex: none; }
+
+.cta-note {
+  margin-top: 12px;
+  color: var(--fg-dim);
+}
+
 /* ── Sections ──────────────────────────────────────────────── */
 .download,
-.shots,
-.install {
+.shots {
   padding: 56px 0 48px;
   border-bottom: 1px solid var(--line);
 }
 
 .download h2,
 .shots h2,
-.install h2,
 .first-run h2 {
   font-size: 1.28rem;
   letter-spacing: -0.025em;
@@ -352,11 +387,6 @@ code, pre {
   }
 }
 
-.shot-terminal {
-  width: min(100%, 460px);
-  margin: 0 auto 34px;
-}
-
 .section-note code,
 .hint code {
   font-size: 12px;
@@ -366,101 +396,6 @@ code, pre {
   background: var(--wash);
   color: var(--fg);
   white-space: nowrap;
-}
-
-/* ── Steps ─────────────────────────────────────────────────── */
-.step {
-  padding: 26px 0 30px;
-  border-top: 1px solid var(--line);
-}
-
-.step:first-of-type { border-top: 0; padding-top: 0; }
-.step:last-of-type { padding-bottom: 0; }
-
-.step-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 12px;
-  margin-bottom: 8px;
-}
-
-.step h3 {
-  font-size: 1rem;
-  letter-spacing: -0.018em;
-}
-
-.step-tag {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-
-.step > p {
-  color: var(--fg-dim);
-  font-size: 14px;
-  line-height: 1.65;
-  max-width: 62ch;
-  margin-bottom: 14px;
-}
-
-/* ── Code blocks ───────────────────────────────────────────── */
-.code {
-  position: relative;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  margin-bottom: 12px;
-  transition: border-color 0.25s var(--ease);
-}
-
-.code:hover { border-color: var(--line-hi); }
-
-.code pre {
-  margin: 0;
-  padding: 16px 84px 16px 18px;
-  overflow-x: auto;
-  color: var(--fg);
-  -webkit-overflow-scrolling: touch;
-}
-
-.code code {
-  background: none;
-  border: 0;
-  padding: 0;
-}
-
-.copy {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--panel-hi);
-  color: var(--fg-dim);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
-}
-
-.copy:hover {
-  color: var(--fg);
-  border-color: var(--line-hi);
-}
-
-.copy[data-done] {
-  color: var(--accent);
-  border-color: currentColor;
 }
 
 .hint {
@@ -473,49 +408,6 @@ code, pre {
 .hint + .hint { margin-top: 6px; }
 
 .hint code { font-size: 11.5px; white-space: normal; }
-
-/* ── Options disclosure ────────────────────────────────────── */
-.options {
-  margin-top: 30px;
-  border-top: 1px solid var(--line);
-  padding-top: 18px;
-}
-
-.options summary {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: fit-content;
-  transition: color 0.2s;
-}
-
-.options summary::-webkit-details-marker { display: none; }
-.options summary::before {
-  content: "+";
-  font-size: 13px;
-  line-height: 1;
-  color: var(--fg-faint);
-}
-.options[open] summary::before { content: "−"; }
-.options summary:hover { color: var(--fg-dim); }
-
-.options pre {
-  margin: 14px 0 0;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  overflow-x: auto;
-  color: var(--fg-dim);
-  font-size: 12px;
-}
 
 /* ── First run ─────────────────────────────────────────────── */
 .first-run {
@@ -717,8 +609,6 @@ body.is-zoomed { overflow: hidden; }
 @media (max-width: 560px) {
   .page { padding: 34px 20px 0; }
   .hero { margin-bottom: 34px; }
-  .code pre { padding: 14px 16px 48px; }
-  .copy { top: auto; bottom: 9px; right: 9px; }
   .folders code { min-width: 0; }
 }
 

@@ -41,11 +41,24 @@
     </p>
 
     <ul class="facts" aria-label="At a glance">
-      <li>Node.js 20.11+</li>
       <li>Linux · macOS · Windows</li>
       <li>100% local</li>
       <li>MIT licensed</li>
     </ul>
+
+    <div class="cta-row">
+      <a class="cta" href="/online">
+        Open the online studio
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M7 17 17 7"/><path d="M8 7h9v9"/>
+        </svg>
+      </a>
+    </div>
+    <p class="hint cta-note">
+      No install: Markdown and the full diagram canvas in one browser tab.
+      Nothing is stored — close the tab and the work is gone.
+    </p>
   </section>
 
   <section class="download" aria-labelledby="download-title">
@@ -79,7 +92,7 @@
     </div>
     <p class="hint">
       Your writing goes to <code>Documents/WritingStudio</code> and stays there when you install
-      a newer version. The command-line and <code>npx</code> installs below still work exactly as before.
+      a newer version.
     </p>
     <p class="hint">
       First launch on macOS: right-click the app, choose <strong>Open</strong>, then confirm.
@@ -109,93 +122,6 @@
         <span class="shot-hint">Click to zoom</span>
       </figcaption>
     </figure>
-  </section>
-
-  <section class="install" aria-labelledby="install-title">
-    <h2 id="install-title">Run it</h2>
-    <p class="section-note">
-      Pick one. Each command starts a local server on
-      <code>http://127.0.0.1:4321</code> — if that port is busy it tries 4322, 4323, and
-      so on, then prints the address it settled on. Open that address in your browser.
-    </p>
-
-    <figure class="shot shot-terminal">
-      <a class="shot-zoom" href="assets/terminal-start.png" aria-label="View the terminal screenshot full size">
-        <img src="assets/terminal-start.png"
-             alt="The Writing Studio terminal banner printed by npm start, with the local URL, folder path, and post counts."
-             width="487" height="335" loading="lazy" decoding="async">
-      </a>
-      <figcaption>
-        What <code>npm start</code> prints
-        <span class="shot-hint">Click to zoom</span>
-      </figcaption>
-    </figure>
-
-    <article class="step">
-      <div class="step-head">
-        <h3>Try it without installing</h3>
-        <span class="step-tag">recommended</span>
-      </div>
-      <p>Install nothing permanently — npm runs the package and keeps your writing in the folder you pass.</p>
-      <div class="code">
-        <pre><code>npx writing-studio ~/writing</code></pre>
-        <button class="copy" type="button" data-copy aria-label="Copy command">Copy</button>
-      </div>
-      <p class="hint">
-        Windows PowerShell:
-        <code>npx writing-studio "C:\Users\me\writing"</code>
-      </p>
-      <p class="hint">
-        Before the npm release, run the same thing straight from GitHub:
-        <code>npx github:habibsnippets/writing-studio ~/writing</code>
-      </p>
-    </article>
-
-    <article class="step">
-      <div class="step-head">
-        <h3>From source</h3>
-        <span class="step-tag">best for reading the code</span>
-      </div>
-      <p>Your writing lives in the repository folder when you run it from a clone.</p>
-      <div class="code">
-        <pre><code>git clone https://github.com/habibsnippets/writing-studio.git
-cd writing-studio
-npm install
-npm start</code></pre>
-        <button class="copy" type="button" data-copy aria-label="Copy commands">Copy</button>
-      </div>
-      <p class="hint">
-        Prefer a different port?
-        <code>PORT=5000 npm start</code> on macOS/Linux, or
-        <code>$env:PORT=5000; npm start</code> in PowerShell.
-      </p>
-    </article>
-
-    <article class="step">
-      <div class="step-head">
-        <h3>Install once, run anywhere</h3>
-      </div>
-      <div class="code">
-        <pre><code>npm install -g writing-studio
-writing-studio ~/writing</code></pre>
-        <button class="copy" type="button" data-copy aria-label="Copy commands">Copy</button>
-      </div>
-      <p class="hint">
-        Point it at any folder — Dropbox, iCloud, a Git repository. The app itself is
-        read-only inside <code>node_modules</code>; only the folder you pass receives your writing.
-      </p>
-    </article>
-
-    <details class="options">
-      <summary>Command-line options</summary>
-      <pre><code>writing-studio [folder] [options]
-
-  -d, --dir &lt;folder&gt;   Where writing is stored (default: current folder)
-  -p, --port &lt;number&gt;  Port to start on
-      --light/--dark   Terminal banner colour
-  -h, --help           Usage
-  -v, --version        Version</code></pre>
-    </details>
   </section>
 
   <section class="first-run" aria-labelledby="first-run-title">
@@ -239,30 +165,6 @@ writing-studio ~/writing</code></pre>
 </footer>
 
 <script>
-  for (const button of document.querySelectorAll("[data-copy]")) {
-    button.addEventListener("click", async () => {
-      const code = button.closest(".code").querySelector("code");
-      let copied = false;
-      try {
-        await navigator.clipboard.writeText(code.textContent);
-        copied = true;
-      } catch {
-        // Clipboard API needs a secure context; select the text instead.
-        const range = document.createRange();
-        range.selectNodeContents(code);
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-      button.textContent = copied ? "Copied" : "Press Ctrl+C";
-      button.dataset.done = "true";
-      setTimeout(() => {
-        button.textContent = "Copy";
-        delete button.dataset.done;
-      }, 1800);
-    });
-  }
-
   // Screenshots: hover lifts the frame, click opens the full-size view.
   const lightbox = document.getElementById("lightbox");
   const lightboxImage = lightbox.querySelector("img");
