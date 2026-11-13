@@ -28,7 +28,7 @@ const memStore = {
   setItem: (key, value) => { sceneMemory.set(key, String(value)); },
   removeItem: (key) => { sceneMemory.delete(key); },
 };
-const PDF_JS_ROOT = "./vendor/pdfjs/";
+const PDF_JS_ROOT = "/online/vendor/pdfjs/";
 const PDF_MAX_PAGES = 20;
 /* PDF pages are shown at up to 660 CSS px wide. Render them at 4x that
    width so the page stays crisp on Retina screens, at 200% canvas zoom,
