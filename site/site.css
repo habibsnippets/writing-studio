@@ -193,7 +193,6 @@ code, pre {
   border-bottom: 1px solid var(--line);
 }
 
-.online h2,
 .download h2,
 .shots h2,
 .install h2,
@@ -256,14 +255,6 @@ code, pre {
   color: var(--fg-dim);
   font-size: 13px;
   line-height: 1.55;
-}
-
-.online-card {
-  max-width: 620px;
-}
-
-.download-card.online-card::after {
-  content: "Open /online ↗";
 }
 
 .download-card::after {
