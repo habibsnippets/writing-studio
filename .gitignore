@@ -6,6 +6,9 @@ content/
 data/
 dist/
 
+# Personal working notes gathered while building the studio.
+research_notes/
+
 # The engineering masterclass is personal study material, not for publishing.
 docs/engineering-guide.md
 
